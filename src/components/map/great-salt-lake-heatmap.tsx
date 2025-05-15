@@ -5,6 +5,7 @@ import TimeControls from '@/components/ui/time-controls';
 import InfoPanel from '@/components/ui/info-panel';
 import { AllLoadedData, ProcessedStation, SiteDataResult, VariableKey, loadGeoJsonData, loadSiteAndTempData } from '@/lib/loaders/';
 import { createSimpleGeoJSON } from '@/lib/utils';
+import { ModeToggle } from '../mode-toggle';
 
 export type LakeFeatureProperties = {
     name?: string;
@@ -300,7 +301,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                     />
                 )}
             </div>
-
+            <ModeToggle />
             <DataInformation />
             <InfoPanel />
         </div>
