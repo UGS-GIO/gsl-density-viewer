@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
+import GreatSaltLakeHeatmap from '@/components/ui/great-salt-lake-heatmap'
 
 export const Route = createFileRoute('/')({
   component: Home,
@@ -8,11 +9,10 @@ export const Route = createFileRoute('/')({
 
 function Home() {
   return (
-    <div className="p-2">
-      <h3>Welcome Home!</h3>
-      <Button variant="default" className="mt-4">
-        Press Me
-      </Button>
+    <div className="App bg-white min-h-screen">
+      <main className="container mx-auto px-4 pt-6">
+        <GreatSaltLakeHeatmap />
+      </main>
     </div>
   )
 }
