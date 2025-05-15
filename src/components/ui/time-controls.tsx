@@ -1,20 +1,18 @@
 import { cn } from '@/lib/utils';
 import React, { useCallback, useMemo } from 'react';
+import { Button } from '@/components/ui/button';
+import { Slider } from "@/components/ui/slider"; // Import Shadcn Slider
 
 interface TimeControlsProps {
     playing: boolean;
     setPlaying: React.Dispatch<React.SetStateAction<boolean>>;
     currentTimeIndex: number;
     setCurrentTimeIndex: (index: number) => void;
-    timePoints: string[]; // Array of strings like "YYYY-MM"
-    currentTimePoint: string; // Current timePoint string like "YYYY-MM"
+    timePoints: string[];
+    currentTimePoint: string;
     isLoading: boolean;
 }
 
-/**
- * Component for time controls (play/pause, slider) with horizontal year markers,
- * styled with Tailwind CSS.
- */
 const TimeControls: React.FC<TimeControlsProps> = ({
     playing,
     setPlaying,
@@ -27,30 +25,6 @@ const TimeControls: React.FC<TimeControlsProps> = ({
     const togglePlay = useCallback(() => {
         setPlaying((prevPlayingState) => !prevPlayingState);
     }, [setPlaying]);
-
-    const handleSliderChange = useCallback(
-        (e: React.ChangeEvent<HTMLInputElement>) => {
-            const newIndex = parseInt(e.target.value, 10);
-            if (newIndex >= 0 && newIndex < timePoints.length) {
-                setCurrentTimeIndex(newIndex);
-                if (playing) {
-                    setPlaying(false);
-                }
-            }
-        },
-        [playing, setPlaying, setCurrentTimeIndex, timePoints]
-    );
-
-    const handleSliderFinish = useCallback(
-        (e: React.MouseEvent<HTMLInputElement> | React.TouchEvent<HTMLInputElement>) => {
-            const target = e.target as HTMLInputElement;
-            const newIndex = parseInt(target.value, 10);
-            if (newIndex >= 0 && newIndex < timePoints.length) {
-                setCurrentTimeIndex(newIndex);
-            }
-        },
-        [setCurrentTimeIndex, timePoints]
-    );
 
     const yearTicks = useMemo(() => {
         if (!timePoints || timePoints.length === 0) return [];
@@ -66,7 +40,7 @@ const TimeControls: React.FC<TimeControlsProps> = ({
         if (sortedYears.length === 0) return [];
 
         const ticks: string[] = [];
-        const step = Math.max(1, Math.floor(sortedYears.length / 6)) || 1; // Aim for ~5-7 ticks
+        const step = Math.max(1, Math.floor(sortedYears.length / 6)) || 1;
 
         for (let i = 0; i < sortedYears.length; i += step) {
             ticks.push(sortedYears[i]);
@@ -101,25 +75,36 @@ const TimeControls: React.FC<TimeControlsProps> = ({
     const playPauseButtonDisabled = isLoading || !timePoints || timePoints.length <= 1;
     const sliderDisabled = isLoading || !timePoints || timePoints.length <= 1;
 
+    const handleSliderValueChange = useCallback((value: number[]) => {
+        const newIndex = value[0];
+        if (newIndex !== undefined && newIndex >= 0 && newIndex < timePoints.length) {
+            setCurrentTimeIndex(newIndex);
+            if (playing) {
+                setPlaying(false);
+            }
+        }
+    }, [timePoints, setCurrentTimeIndex, playing, setPlaying]);
+
     return (
         <div className="mt-4 select-none">
             <div className="flex justify-between items-center mb-5 px-2">
-                <button
+                <Button
+                    variant={playing && !playPauseButtonDisabled ? 'destructive' : 'default'}
                     onClick={togglePlay}
                     disabled={playPauseButtonDisabled}
-                    className={`py-2 px-4 rounded-lg font-medium text-sm text-white transition-colors duration-200 ease-in-out shadow-md
-            ${playing && !playPauseButtonDisabled ? 'bg-red-500 hover:bg-red-600' : ''}
-            ${!playing && !playPauseButtonDisabled ? 'bg-blue-600 hover:bg-blue-700' : ''}
-            ${playPauseButtonDisabled ? 'bg-gray-400 opacity-60 cursor-not-allowed' : ''}
-          `}
+                    // Removed explicit size/font classes, rely on Button variant or add 'size' prop if needed
+                    className={cn(
+                        "transition-colors duration-150 ease-in-out shadow-sm",
+                        // No need for explicit focus-visible here if using Shadcn Button, it has its own
+                    )}
                     aria-pressed={playing}
                     aria-label={playing ? "Pause animation" : "Play animation"}
                 >
                     {playing ? 'Pause' : 'Play Animation'}
-                </button>
+                </Button>
 
                 <div
-                    className="text-sm font-medium text-gray-700 bg-gray-50 py-1.5 px-3 rounded-md shadow-inner whitespace-nowrap min-w-[160px] text-center"
+                    className="text-sm font-medium text-foreground bg-muted py-1.5 px-3 rounded-md shadow-inner whitespace-nowrap min-w-[160px] text-center"
                     aria-live="polite"
                 >
                     {timePoints.length > 0
@@ -138,7 +123,7 @@ const TimeControls: React.FC<TimeControlsProps> = ({
                     return (
                         <div
                             key={year}
-                            className="absolute bottom-0 text-xs text-gray-600 transform -translate-x-1/2 text-center cursor-default"
+                            className="absolute bottom-0 text-xs text-muted-foreground transform -translate-x-1/2 text-center cursor-default"
                             style={{ left: `${positionPercent}%` }}
                         >
                             {year}
@@ -148,24 +133,14 @@ const TimeControls: React.FC<TimeControlsProps> = ({
             </div>
 
             <div className="px-2 mb-1">
-                <input
-                    type="range"
-                    min="0"
+                <Slider
+                    value={[currentTimeIndex]}
+                    min={0}
                     max={timePoints.length > 0 ? timePoints.length - 1 : 0}
-                    value={currentTimeIndex}
-                    onChange={handleSliderChange}
-                    onMouseUp={handleSliderFinish}
-                    onTouchEnd={handleSliderFinish}
+                    step={1}
+                    onValueChange={handleSliderValueChange}
                     disabled={sliderDisabled}
-                    className={cn(`appearance-none w-full h-2.5 rounded-full outline-none transition-opacity duration-200 ease-in-out`,
-                        sliderDisabled
-                            ? 'bg-gray-200 opacity-60 cursor-not-allowed'
-                            : 'bg-gray-300 hover:bg-gray-400 cursor-pointer'
-                    )}
-                    // For custom thumb styling, you'd typically need custom CSS:
-                    // e.g., in your global CSS:
-                    // input[type=range]::-webkit-slider-thumb { /* ... styles ... */}
-                    // input[type=range]::-moz-range-thumb { /* ... styles ... */}
+                    className={cn("w-full data-[disabled]:opacity-50 data-[disabled]:cursor-not-allowed")}
                     aria-valuetext={`Time point: ${formatTimePointForDisplay(currentTimePoint)}`}
                     aria-label="Time Point Slider"
                     aria-controls="time-display-below-slider"
@@ -174,7 +149,7 @@ const TimeControls: React.FC<TimeControlsProps> = ({
 
             <div
                 id="time-display-below-slider"
-                className="text-center text-xs text-gray-600 mt-0 h-5"
+                className="text-center text-xs text-muted-foreground mt-0 h-5"
                 aria-live="polite"
             >
                 {timePoints.length > 0 && formatTimePointForDisplay(currentTimePoint)}

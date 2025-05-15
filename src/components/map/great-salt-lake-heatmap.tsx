@@ -12,27 +12,18 @@ export type LakeFeatureProperties = {
     [key: string]: any;
 } | null;
 
-interface Station {
-    id: string;
-    name: string;
-    longitude: number;
-    latitude: number;
-}
 
 export type StationDataValues = Record<string, number | undefined>;
-// type AllData = Record<string, Record<string, StationDataValues | undefined>>;
 type DataRanges = Record<string, [number, number]>;
 
-// Expected return type from loadGeoJsonData
 interface GeoJsonResult {
     data: FeatureCollection<Geometry, LakeFeatureProperties> | null;
     error: string | null;
 }
 
-// Props for the inline VariableSelector component
 interface VariableSelectorProps {
-    variables: string[];
-    selectedVar: string;
+    variables: VariableKey[];
+    selectedVar: VariableKey;
     onChange: Dispatch<SetStateAction<VariableKey>>;
     isLoading: boolean;
     variableConfig: Record<string, VariableConfig | undefined>;
@@ -40,24 +31,23 @@ interface VariableSelectorProps {
 
 /**
  * Main component for the Great Salt Lake Heatmap visualization.
- * It orchestrates data loading, state management, and renders UI sub-components.
+ * Orchestrates data loading, state management, and renders UI sub-components.
  */
 const GreatSaltLakeHeatmap: React.FC = () => {
     const [lakeData, setLakeData] = useState<FeatureCollection<Geometry, LakeFeatureProperties> | null>(null);
     const [stations, setStations] = useState<ProcessedStation[]>([]);
     const [timePoints, setTimePoints] = useState<string[]>([]);
     const [currentTimeIndex, setCurrentTimeIndex] = useState<number>(0);
-    const [allData, setAllData] = useState<AllLoadedData>({});
+    const [allData, setAllData] = useState<AllLoadedData>({} as AllLoadedData);
     const [dataRanges, setDataRanges] = useState<DataRanges>({});
     const [selectedVariable, setSelectedVariable] = useState<VariableKey>('density');
-    // const [availableVariables, setAvailableVariables] = useState<string[]>(['density']);
     const [availableVariables, setAvailableVariables] = useState<VariableKey[]>(['density']);
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [playing, setPlaying] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [usingMockData, setUsingMockData] = useState<boolean>(false);
-    const [retries, setRetries] = useState<number>(0);
-    const MAX_RETRIES = 5;
+    const [retries, setRetries] = useState<number>(0); // Retries for data loading
+    const MAX_RETRIES = 3; // Max retries for data loading
 
     const playTimerRef = useRef<number | null>(null);
 
@@ -79,117 +69,134 @@ const GreatSaltLakeHeatmap: React.FC = () => {
     }), []);
 
     useEffect(() => {
-        const loadInitialData = async () => {
+        let isMounted = true;
+
+        const loadInitialData = async (attempt: number) => {
+            if (!isMounted) return;
             setIsLoading(true);
-            setError(null);
-            setUsingMockData(false);
             let currentErrors: string[] = [];
 
             try {
                 const geoJsonResult: GeoJsonResult = await loadGeoJsonData();
+                if (!isMounted) return;
                 setLakeData(geoJsonResult.data || createSimpleGeoJSON());
                 if (geoJsonResult.error) currentErrors.push(geoJsonResult.error);
             } catch (err: any) {
                 console.error('GreatSaltLakeHeatmap: Error in GeoJSON loading:', err);
                 currentErrors.push('Failed to load lake outline. Using simplified version.');
-                setLakeData(createSimpleGeoJSON());
+                if (isMounted) setLakeData(createSimpleGeoJSON());
             }
 
             try {
-                if (retries >= MAX_RETRIES) {
-                    currentErrors.push('Max retries reached. Unable to load data.');
+                const dataResult: SiteDataResult = await loadSiteAndTempData();
+                if (!isMounted) return;
+
+                if (dataResult.error && attempt < MAX_RETRIES - 1) {
+                    console.warn(`Data load attempt ${attempt + 1} failed: ${dataResult.error}. Retrying...`);
+                    currentErrors.push(dataResult.error); // Keep error for now
+                    setError(currentErrors.join('. ')); // Show intermediate error
+                    setRetries(prev => prev + 1); // Trigger re-run via dependency change
                     return;
                 }
-
-                console.log('GreatSaltLakeHeatmap: Loading site and temperature data...', await loadSiteAndTempData());
-
-                const dataResult: SiteDataResult = await loadSiteAndTempData();
-                if (dataResult.error) {
+                if (dataResult.error) { // Max retries reached or non-retryable error
                     currentErrors.push(dataResult.error);
-                    setRetries(prev => prev + 1);
-                    return; // Retry logic can be handled here or in the calling function
                 }
+
                 setStations(dataResult.stations || []);
                 setTimePoints(dataResult.timePoints || []);
-                setAllData(dataResult.allData || {});
+                setAllData(dataResult.allData || ({} as AllLoadedData));
                 setDataRanges(dataResult.dataRanges || {});
 
                 const heatmapVars = Object.keys(dataResult.allData || {})
                     .filter((key): key is VariableKey =>
-                        key in VARIABLE_CONFIGS && (key === 'density' || key === 'salinity') // Ensure config exists & is selectable
+                        key in VARIABLE_CONFIGS && (key === 'density' || key === 'salinity')
                     );
 
                 setAvailableVariables(heatmapVars.length > 0 ? heatmapVars : ['density']);
-                const defaultVar = 'density';
+                const defaultVar: VariableKey = 'density';
                 const initialSelectedVar = heatmapVars.includes(defaultVar) ? defaultVar : (heatmapVars[0] || 'density');
                 setSelectedVariable(initialSelectedVar);
                 setCurrentTimeIndex(dataResult.timePoints && dataResult.timePoints.length > 0 ? dataResult.timePoints.length - 1 : 0);
 
                 if (dataResult.usingMockData) setUsingMockData(true);
-                if (dataResult.error) currentErrors.push(dataResult.error);
 
             } catch (err: any) {
-                console.error('GreatSaltLakeHeatmap: Error in site data loading:', err);
-                currentErrors.push(`Failed to load site data. ${usingMockData ? "Using simulated data." : "No data to display."}`);
-                // Fallback state for critical failure
-                setStations([]);
-                setTimePoints([]);
-                setAllData({ density: {}, salinity: {}, temperature: {} }); // Ensure object structure
-                setDataRanges({ density: VARIABLE_CONFIGS.density.defaultRange, salinity: VARIABLE_CONFIGS.salinity.defaultRange });
-                setAvailableVariables(['density', 'salinity']); // Default available
-                setSelectedVariable('density');
+                console.error('GreatSaltLakeHeatmap: Critical error in site data loading pipeline:', err);
+                currentErrors.push(`Failed to process site data. ${usingMockData ? "Using simulated data." : "No data to display."}`);
+                // Fallback state for critical failure (if not already handled by loadSiteAndTempData's own fallback)
+                if (isMounted) {
+                    setStations([]);
+                    setTimePoints([]);
+                    setAllData({} as AllLoadedData);
+                    setDataRanges({
+                        density: VARIABLE_CONFIGS.density.defaultRange,
+                        salinity: VARIABLE_CONFIGS.salinity.defaultRange
+                    });
+                    setAvailableVariables(['density']);
+                    setSelectedVariable('density');
+                }
+            } finally {
+                if (isMounted) {
+                    if (currentErrors.length > 0) setError(currentErrors.join('. '));
+                    else setError(null);
+                    setIsLoading(false);
+                }
             }
-
-            if (currentErrors.length > 0) setError(currentErrors.join('. '));
-            setIsLoading(false);
         };
 
-        loadInitialData();
-    }, [VARIABLE_CONFIGS, usingMockData]); // Added VARIABLE_CONFIGS (stable) & usingMockData for error message context
+        loadInitialData(retries);
 
+        return () => {
+            isMounted = false;
+        };
+    }, [VARIABLE_CONFIGS, retries]);
+
+    // Animation Effect
     useEffect(() => {
         if (playing && timePoints.length > 0) {
-            playTimerRef.current = setInterval(() => {
+            playTimerRef.current = window.setInterval(() => {
                 setCurrentTimeIndex((prevIndex) => {
                     const nextIndex = prevIndex + 1;
                     if (nextIndex >= timePoints.length) {
                         setPlaying(false);
-                        return timePoints.length - 1;
+                        return timePoints.length > 0 ? timePoints.length - 1 : 0;
                     }
                     return nextIndex;
                 });
             }, ANIMATION_INTERVAL);
-        } else if (playTimerRef.current) {
+        } else if (playTimerRef.current !== null) {
             clearInterval(playTimerRef.current);
             playTimerRef.current = null;
         }
         return () => {
-            if (playTimerRef.current) clearInterval(playTimerRef.current);
+            if (playTimerRef.current !== null) clearInterval(playTimerRef.current);
         };
     }, [playing, timePoints.length, ANIMATION_INTERVAL]);
 
     const currentTimePoint = useMemo(() => timePoints[currentTimeIndex] || '', [timePoints, currentTimeIndex]);
 
+    // currentVariableData will hold the TimePointStationData or TemperatureMap for the selectedVariable
     const currentVariableData = useMemo(() => {
-        console.log('selectedVariable', selectedVariable);
-
         return allData[selectedVariable] || {};
     }, [allData, selectedVariable]);
 
-    const currentDataForTimepoint = useMemo(() => {
-        const data = currentVariableData[currentTimePoint];
-        return typeof data === 'object' && data !== null ? data : {};
-    }, [currentVariableData, currentTimePoint]);
+    // currentDataForTimepoint is specifically for the HeatmapRenderer (station-based data)
+    const currentDataForTimepoint = useMemo((): StationDataValues | {} => {
+        if (selectedVariable === 'density' || selectedVariable === 'salinity') {
+            const dataSet = allData[selectedVariable]; // This is TimePointStationData | undefined
+            if (dataSet) {
+                return dataSet[currentTimePoint] || {};
+            }
+        }
+        return {}; // Return empty for 'temperature' or if data missing
+    }, [allData, selectedVariable, currentTimePoint]);
+
 
     const currentConfig = useMemo(() => {
         return VARIABLE_CONFIGS[selectedVariable] || {
-            key: selectedVariable,
-            label: selectedVariable.toUpperCase(),
-            unit: '',
-            precision: 2,
-            interpolate: 'interpolateBlues',
-            defaultRange: [0, 1]
-        } as VariableConfig; // Fallback with type assertion
+            key: selectedVariable, label: selectedVariable.toUpperCase(), unit: '', precision: 2,
+            interpolate: 'interpolateBlues', defaultRange: [0, 1]
+        } as VariableConfig;
     }, [selectedVariable, VARIABLE_CONFIGS]);
 
     const currentRange = useMemo(() => {
@@ -198,17 +205,12 @@ const GreatSaltLakeHeatmap: React.FC = () => {
 
     const currentTemperature = useMemo(() => {
         const tempTimePointData = allData.temperature?.[currentTimePoint];
-        // Assuming temperature data is not per-station for this average display
-        // If it can be a direct number or an object, adjust accordingly.
-        // For now, assuming it's a single value for the timepoint if it exists.
         return typeof tempTimePointData === 'number' ? tempTimePointData : undefined;
     }, [allData, currentTimePoint]);
 
-
-    // Inline VariableSelector Component
     const VariableSelector: React.FC<VariableSelectorProps> = ({ variables, selectedVar, onChange, isLoading, variableConfig }) => (
         <div className="mb-4 text-center">
-            <label htmlFor="variable-select" className="mr-2 font-medium text-sm text-gray-700">
+            <label htmlFor="variable-select" className="mr-2 text-sm font-medium text-foreground">
                 Show:
             </label>
             <select
@@ -216,7 +218,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                 value={selectedVar}
                 onChange={(e) => onChange(e.target.value as VariableKey)}
                 disabled={isLoading || variables.length <= 1}
-                className="py-1.5 px-3 pr-8 rounded border border-gray-300 text-sm shadow-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
+                className="py-1.5 pl-3 pr-8 text-sm rounded-md border border-input bg-background shadow-sm focus:border-primary focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
                 {variables.map(variableKey => (
                     <option key={variableKey} value={variableKey}>
@@ -228,39 +230,30 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         </div>
     );
 
-    // Stub for DataInformation, assuming it's simple or static
-    const DataInformation: React.FC = () => {
-        // If this component has content, it should be implemented here.
-        // For now, returning null if it's just a placeholder.
-        return null;
-    };
-
-    console.log('currentDataForTimepoint', currentDataForTimepoint);
-
-
     return (
-        <div className="w-full h-full max-w-6xl mx-auto p-4 sm:p-6 bg-white rounded-lg shadow-xl flex flex-col">
+        <div className="flex h-full w-full max-w-6xl flex-col rounded-lg bg-card p-4 shadow-xl sm:p-6 text-card-foreground">
             <header className="mb-4">
-                <h2 className="text-2xl sm:text-3xl font-bold text-center text-blue-800">
+                <h2 className="text-center text-2xl font-bold text-primary sm:text-3xl">
                     Great Salt Lake Heatmap
                 </h2>
-                <p className="text-center text-gray-600 text-sm sm:text-base">
+                <p className="text-center text-sm text-muted-foreground sm:text-base">
                     Monthly Chemical Conditions Visualization
                 </p>
             </header>
 
+            {/* Status Messages */}
             {error && (
-                <div className="mb-4 p-3 text-center text-yellow-800 bg-yellow-100 rounded border border-yellow-300 text-sm" role="alert">
+                <div className="mb-4 rounded border border-destructive/50 bg-destructive/10 p-3 text-center text-sm text-destructive" role="alert">
                     <strong>Warning:</strong> {error}
                 </div>
             )}
             {usingMockData && !error && (
-                <div className="mb-4 p-3 text-center text-blue-800 bg-blue-100 rounded border border-blue-300 text-sm" role="status">
+                <div className="mb-4 rounded border border-primary/50 bg-primary/10 p-3 text-center text-sm text-primary" role="status">
                     <strong>Note:</strong> Using simulated or incomplete data for demonstration.
                 </div>
             )}
 
-            {availableVariables.length > 0 && ( // Only show selector if there are variables
+            {availableVariables.length > 0 && (
                 <VariableSelector
                     variables={availableVariables}
                     selectedVar={selectedVariable}
@@ -271,13 +264,14 @@ const GreatSaltLakeHeatmap: React.FC = () => {
             )}
 
             {/* Main content area: Visualization and Controls */}
-            <div className="flex-grow mb-6 bg-gray-50 rounded-lg p-2 sm:p-4 shadow-inner relative flex flex-col min-h-[500px]"> {/* Ensure min-height for viz */}
+            <div className="relative mb-6 flex flex-grow flex-col rounded-lg bg-muted/50 p-2 shadow-inner sm:p-4 min-h-[500px]">
                 {isLoading && (
-                    <div className="absolute inset-0 bg-white bg-opacity-80 flex items-center justify-center z-20 rounded-lg">
-                        <p className="text-xl text-blue-600 animate-pulse">Loading data...</p>
+                    <div className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-background/80 backdrop-blur-sm">
+                        <p className="text-xl text-primary animate-pulse">Loading data...</p>
                     </div>
                 )}
-                <div className="flex-grow relative"> {/* This div will contain the HeatmapRenderer and allow it to size correctly */}
+                {/* This div will contain the HeatmapRenderer and allow it to size correctly */}
+                <div className="relative flex-grow">
                     <HeatmapRenderer
                         lakeData={lakeData}
                         stations={stations}
@@ -289,7 +283,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                         isLoading={isLoading}
                     />
                 </div>
-                {!isLoading && timePoints.length > 0 && ( // Only show time controls if not loading and data exists
+                {!isLoading && timePoints.length > 0 && (
                     <TimeControls
                         playing={playing}
                         setPlaying={setPlaying}
@@ -301,8 +295,10 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                     />
                 )}
             </div>
-            <ModeToggle />
-            <DataInformation />
+
+            <div className="py-4 border-t border-border">
+                <ModeToggle />
+            </div>
             <InfoPanel />
         </div>
     );
