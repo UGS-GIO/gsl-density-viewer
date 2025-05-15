@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 import { FeatureCollection, Polygon, Feature } from 'geojson';
-import { LakeFeatureProperties, StationDataValues } from "@/components/ui/great-salt-lake-heatmap";
+import { LakeFeatureProperties, StationDataValues } from "@/components/map/great-salt-lake-heatmap";
 
 export function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs))

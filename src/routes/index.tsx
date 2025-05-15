@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
-import GreatSaltLakeHeatmap from '@/components/ui/great-salt-lake-heatmap'
+import GreatSaltLakeHeatmap from '@/components/map/great-salt-lake-heatmap'
 
 export const Route = createFileRoute('/')({
   component: Home,

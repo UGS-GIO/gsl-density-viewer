@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, Dispatch, SetStateAction } from 'react';
 import { FeatureCollection, Geometry } from 'geojson';
-import HeatmapRenderer, { VariableConfig } from '@/components/ui/heatmap-renderer';
+import HeatmapRenderer, { VariableConfig } from '@/components/map/heatmap-renderer';
 import TimeControls from '@/components/ui/time-controls';
 import InfoPanel from '@/components/ui/info-panel';
 import { AllLoadedData, ProcessedStation, SiteDataResult, VariableKey, loadGeoJsonData, loadSiteAndTempData } from '@/lib/loaders/';

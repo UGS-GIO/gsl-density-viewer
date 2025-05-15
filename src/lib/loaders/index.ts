@@ -2,7 +2,7 @@ import proj4 from 'proj4';
 import { Feature, Point } from 'geojson';
 import { TemperatureMap, getHardcodedTemperatureData } from '@/lib/data/temperature-data';
 import { FeatureCollection, Geometry } from 'geojson';
-import { LakeFeatureProperties } from '@/components/ui/great-salt-lake-heatmap';
+import { LakeFeatureProperties } from '@/components/map/great-salt-lake-heatmap';
 
 // Type Definition
 
