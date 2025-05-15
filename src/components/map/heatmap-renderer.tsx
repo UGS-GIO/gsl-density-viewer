@@ -7,29 +7,12 @@ import Legend from './legend';
 import { LakeFeatureProperties } from './great-salt-lake-heatmap';
 import { ProcessedStation } from '@/lib/loaders';
 
-interface LegendProps {
-    colorScale: d3.ScaleSequential<string> | d3.ScaleSequential<number, string>;
-    range: [number, number];
-    label: string;
-    width: number;
-    height: number;
-    svg: d3.Selection<SVGGElement, unknown, null, undefined>;
-}
-
 // --- Constants ---
 const SVG_VIEWBOX_WIDTH = 800;
 const SVG_VIEWBOX_HEIGHT = 500;
 const SVG_PROJECTION_PADDING = 20; // Padding inside the SVG for map projection fitting
 
 // --- Type Definitions ---
-// Station data structure
-interface Station {
-    id: string;
-    name: string;
-    longitude: number;
-    latitude: number;
-}
-
 // Configuration for a displayable variable (density, salinity, etc.)
 export interface VariableConfig {
     key: string;
@@ -329,27 +312,34 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
                 const [x, y] = projected;
                 const value = currentDataForTimepoint[station.id];
                 const hasData = value !== undefined && typeof value === 'number' && !isNaN(value);
-                const fillColor = hasData ? colorScale(value) : '#cccccc';
+                const fillColor = hasData ? colorScale(value) : 'hsl(var(--muted))';
 
                 const g = stationGroup.append('g').attr('transform', `translate(${x}, ${y})`);
-                g.append('circle').attr('r', 5).attr('fill', fillColor).attr('stroke', '#333').attr('stroke-width', 1);
+                g.append('circle').attr('r', 5)
+                    .attr('fill', fillColor)
+                    .attr('stroke', 'hsl(var(--foreground))')
+                    .attr('stroke-width', 1);
                 g.append('title').text(hasData ? `${station.name}: ${value.toFixed(currentConfig.precision)} ${currentConfig.unit}` : `${station.name}: No data`);
 
                 const offset = stationLabelOffsets[station.id] || DEFAULT_STATION_LABEL_OFFSET;
                 g.append('text').attr('x', offset.x).attr('y', offset.y)
-                    .attr('text-anchor', 'middle').style('font-size', '10px')
-                    .style('font-family', 'sans-serif').style('fill', '#333').text(station.name);
+                    .attr('text-anchor', 'middle')
+                    .attr('class', 'fill-foreground')
+                    .style('font-size', '10px')
+                    .text(station.name);
             } catch (error) { /* Silently ignore errors for individual station drawing */ }
         });
 
         const titleYPosition = SVG_PROJECTION_PADDING + 10;
         svg.append('text').attr('x', SVG_VIEWBOX_WIDTH / 2).attr('y', titleYPosition)
-            .attr('text-anchor', 'middle').style('font-size', '16px').style('font-weight', 'bold')
+            .attr('text-anchor', 'middle')
+            .attr('class', 'fill-primary text-base font-semibold')
             .text(`Great Salt Lake ${currentConfig.label} - ${formatDateForTitle(currentTimePoint)}`);
 
         const infoTextYPosition = titleYPosition + 20;
         svg.append('text').attr('x', SVG_VIEWBOX_WIDTH / 2).attr('y', infoTextYPosition)
-            .attr('text-anchor', 'middle').style('font-size', '12px')
+            .attr('text-anchor', 'middle')
+            .attr('class', 'fill-muted-foreground text-xs')
             .text(
                 `Avg Temp: ${currentTemperature !== undefined ? `${currentTemperature.toFixed(1)}°F` : 'N/A'} | Avg ${currentConfig.label}: ${avgValue !== undefined && avgValue !== null && !isNaN(avgValue) ? `${avgValue.toFixed(currentConfig.precision)} ${currentConfig.unit}` : 'N/A'
                 }`
@@ -381,13 +371,12 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
     }, [projection, isLoading, lakeData, currentConfig, stations, renderHeatmap]);
 
     return (
-        <div className="relative border rounded-lg bg-gray-100 overflow-hidden mb-4 shadow aspect-[16/10] sm:aspect-[16/9]">
+        <div className="relative mb-4 overflow-hidden rounded-lg border border-border bg-card shadow aspect-[16/10] sm:aspect-[16/9]">
             <svg
                 ref={svgRef}
                 viewBox={`0 0 ${SVG_VIEWBOX_WIDTH} ${SVG_VIEWBOX_HEIGHT}`}
                 preserveAspectRatio="xMidYMid meet"
-                className="absolute top-0 left-0 w-full h-full block"
-                style={{ backgroundColor: '#f0f7fa' }}
+                className="absolute inset-0 block h-full w-full bg-muted/50"
                 aria-labelledby="heatmap-title-dynamic"
                 role="img"
             >
