@@ -113,7 +113,6 @@ const MIN_DATE = new Date(2000, 0, 1);
 
 // Helper: Load GeoJSON
 export const loadGeoJsonData = async () => {
-    console.log("Fetching GeoJSON from:", GSL_OUTLINE_ENDPOINT);
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -125,7 +124,6 @@ export const loadGeoJsonData = async () => {
             return { data: null, error: `HTTP error loading GeoJSON from URL! status: ${response.status}` };
         }
         const gslGeoJson = await response.json();
-        console.log("GeoJSON loaded successfully:", gslGeoJson.type, `with ${gslGeoJson.features?.length || 0} features`);
         return { data: gslGeoJson, error: null };
     } catch (err) {
         if (err instanceof Error) {
@@ -358,7 +356,6 @@ const generateMockSalinityForStations = ({ stations, timePoints, temperatureData
 
 // --- Main data loading function ---
 export const loadSiteAndTempData = async () => {
-    console.log("Fetching site data...");
     try {
         let sitesJson: FeatureCollection<Point, ApiSiteFeatureProperties> = { type: 'FeatureCollection', features: [] };
         let processedStations: ProcessedStation[] = [];
@@ -375,13 +372,8 @@ export const loadSiteAndTempData = async () => {
         // Fetch API data
         try {
             const response = await fetch(API_ENDPOINT, { method: 'GET', headers: API_HEADERS, signal: AbortSignal.timeout(5000) });
-            console.log("API Response:", response);
             if (response.ok) {
                 sitesJson = await response.json();
-                console.log("API data loaded successfully:", sitesJson.type, `with ${sitesJson.features?.length || 0} features`);
-                console.log("API data:", sitesJson);
-
-
                 apiSuccessful = true;
                 const filteredSites = sitesJson.features.filter(site => ALLOWED_SITES.includes(site.properties.site || `site-${site.properties.id}`));
                 sitesJson.features = filteredSites;
@@ -482,9 +474,6 @@ export const loadSiteAndTempData = async () => {
         try {
             const tempResult = processTemperatureData(timePointsSet, tempLookup);
             if (tempResult) {
-
-                console.log("Processed temperature data:", tempResult);
-
                 timePointsSet = new Set(tempResult.timePoints);
                 tempLookup = tempResult.temperatureData;
             }
@@ -493,8 +482,6 @@ export const loadSiteAndTempData = async () => {
         // Filter and sort time points (keep as before)
         const allTimePoints = Array.from(timePointsSet)
             .filter(yearMonth => {
-                console.log("Filtering time point:", typeof yearMonth);
-
                 const [year] = yearMonth.split('-').map(Number); return year >= 2000;
             })
             .sort();
@@ -503,11 +490,9 @@ export const loadSiteAndTempData = async () => {
         let usingMockData = false;
         if (processedStations.length > 0 && allTimePoints.length > 0) {
             if (!hasRealDensity) {
-                console.log("Generating synthetic density data.");
                 densityLookup = generateMockDensityForStations({ stations: processedStations, timePoints: allTimePoints, temperatureData: tempLookup });
                 usingMockData = true; // Mark if density is fully mocked
             } else {
-                console.log("Supplementing density data.");
                 const syntheticDensity = generateMockDensityForStations({ stations: processedStations, timePoints: allTimePoints, temperatureData: tempLookup });
                 allTimePoints.forEach(yearMonth => {
                     const densityLookupYearMonth = densityLookup[yearMonth] ?? (densityLookup[yearMonth] = {});
@@ -523,12 +508,10 @@ export const loadSiteAndTempData = async () => {
 
             // ++ Generate/Supplement Salinity ++
             if (!hasRealSalinity) {
-                console.log("Generating synthetic salinity data.");
                 salinityLookup = generateMockSalinityForStations({ stations: processedStations, timePoints: allTimePoints, temperatureData: tempLookup });
                 // Set usingMockData only if density is also mocked
                 if (!hasRealDensity) usingMockData = true;
             } else {
-                console.log("Supplementing salinity data.");
                 const syntheticSalinity = generateMockSalinityForStations({ stations: processedStations, timePoints: allTimePoints, temperatureData: tempLookup });
                 allTimePoints.forEach(yearMonth => {
                     if (!salinityLookup[yearMonth]) salinityLookup[yearMonth] = {};

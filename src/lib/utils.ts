@@ -17,8 +17,6 @@ export function cn(...inputs: ClassValue[]) {
  * @returns {number} - Average density or null if no valid values
  */
 export const calculateAverageDensity = (densityMap: StationDataValues): number | null => {
-    console.log('densityMap', densityMap);
-
     if (!densityMap || typeof densityMap !== 'object') return null;
 
     // Filter out non-numeric values with a type guard
