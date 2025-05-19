@@ -1,8 +1,10 @@
 import { cn } from '@/lib/utils';
-import React, { useCallback, useMemo } from 'react';
+import React, { Dispatch, SetStateAction, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { Slider } from "@/components/ui/slider"; // Import Shadcn Slider
-
+import { Slider } from "@/components/ui/slider";
+import { VariableKey } from '@/lib/loaders';
+import { VariableConfig } from '@/components/map/heatmap-renderer';
+import HeatmapSelector from '@/components/heatmap-selector';
 interface TimeControlsProps {
     playing: boolean;
     setPlaying: React.Dispatch<React.SetStateAction<boolean>>;
@@ -11,6 +13,13 @@ interface TimeControlsProps {
     timePoints: string[];
     currentTimePoint: string;
     isLoading: boolean;
+
+    // new vars from the heatmapselector
+    variables: VariableKey[];
+    selectedVar: VariableKey;
+    onChange: Dispatch<SetStateAction<VariableKey>>;
+    variableConfig: Record<string, VariableConfig | undefined>;
+
 }
 
 const TimeControls: React.FC<TimeControlsProps> = ({
@@ -21,6 +30,10 @@ const TimeControls: React.FC<TimeControlsProps> = ({
     timePoints,
     currentTimePoint,
     isLoading,
+    variables,
+    selectedVar,
+    onChange,
+    variableConfig,
 }) => {
     const togglePlay = useCallback(() => {
         setPlaying((prevPlayingState) => !prevPlayingState);
@@ -86,22 +99,31 @@ const TimeControls: React.FC<TimeControlsProps> = ({
     }, [timePoints, setCurrentTimeIndex, playing, setPlaying]);
 
     return (
-        <div className="mt-4 select-none">
+        <div className="mt-4 select-none w-full">
             <div className="flex justify-between items-center mb-5 px-2">
                 <Button
                     variant={playing && !playPauseButtonDisabled ? 'destructive' : 'default'}
                     onClick={togglePlay}
                     disabled={playPauseButtonDisabled}
-                    // Removed explicit size/font classes, rely on Button variant or add 'size' prop if needed
                     className={cn(
                         "transition-colors duration-150 ease-in-out shadow-sm",
-                        // No need for explicit focus-visible here if using Shadcn Button, it has its own
                     )}
                     aria-pressed={playing}
                     aria-label={playing ? "Pause animation" : "Play animation"}
                 >
                     {playing ? 'Pause' : 'Play Animation'}
                 </Button>
+
+                {/* Left Group: Variable Selector */}
+                {variables.length > 0 && !isLoading && (
+                    <HeatmapSelector
+                        variables={variables}
+                        selectedVar={selectedVar}
+                        onChange={onChange}
+                        isLoading={isLoading}
+                        variableConfig={variableConfig}
+                    />
+                )}
 
                 <div
                     className="text-sm font-medium text-foreground bg-muted py-1.5 px-3 rounded-md shadow-inner whitespace-nowrap min-w-[160px] text-center"

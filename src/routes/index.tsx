@@ -8,8 +8,8 @@ export const Route = createFileRoute('/')({
 function Home() {
   return (
 
-    <div className="App bg-background text-foreground min-h-screen">
-      <main className="container mx-auto px-4 pt-6">
+    <div className="App flex flex-col min-h-screen w-screen overflow-hidden bg-background text-foreground">
+      <main className="flex-grow flex flex-col">
         <GreatSaltLakeHeatmap />
       </main>
     </div>

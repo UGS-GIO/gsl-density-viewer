@@ -1,11 +1,10 @@
-// src/components/ui/HeatmapRenderer.tsx
 import React, { useRef, useMemo, useEffect, useCallback } from 'react';
 import * as d3 from 'd3';
 import { FeatureCollection, Geometry, Feature } from 'geojson';
 import { calculateAverageDensity } from '@/lib/utils';
-import Legend from './legend';
 import { LakeFeatureProperties } from './great-salt-lake-heatmap';
 import { ProcessedStation } from '@/lib/loaders';
+import Legend from '@/components/map/legend';
 
 // --- Constants ---
 const SVG_VIEWBOX_WIDTH = 800;
@@ -330,33 +329,6 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
             } catch (error) { /* Silently ignore errors for individual station drawing */ }
         });
 
-        const titleYPosition = SVG_PROJECTION_PADDING + 10;
-        svg.append('text').attr('x', SVG_VIEWBOX_WIDTH / 2).attr('y', titleYPosition)
-            .attr('text-anchor', 'middle')
-            .attr('class', 'fill-primary text-base font-semibold')
-            .text(`Great Salt Lake ${currentConfig.label} - ${formatDateForTitle(currentTimePoint)}`);
-
-        const infoTextYPosition = titleYPosition + 20;
-        svg.append('text').attr('x', SVG_VIEWBOX_WIDTH / 2).attr('y', infoTextYPosition)
-            .attr('text-anchor', 'middle')
-            .attr('class', 'fill-muted-foreground text-xs')
-            .text(
-                `Avg Temp: ${currentTemperature !== undefined ? `${currentTemperature.toFixed(1)}°F` : 'N/A'} | Avg ${currentConfig.label}: ${avgValue !== undefined && avgValue !== null && !isNaN(avgValue) ? `${avgValue.toFixed(currentConfig.precision)} ${currentConfig.unit}` : 'N/A'
-                }`
-            );
-
-        const legendGroup = svg.append('g')
-            .attr('transform', `translate(${SVG_VIEWBOX_WIDTH - 200 - SVG_PROJECTION_PADDING}, ${SVG_VIEWBOX_HEIGHT - 10 - SVG_PROJECTION_PADDING - 20})`);
-
-        Legend({
-            svg: legendGroup,
-            colorScale: colorScale,
-            range: currentRange,
-            label: `${currentConfig.label} (${currentConfig.unit})`,
-            width: 200,
-            height: 10,
-        });
-
     }, [
         lakeData, stations, projection, currentTimePoint, currentDataForTimepoint,
         currentTemperature, currentRange, currentConfig, isLoading,
@@ -371,17 +343,17 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
     }, [projection, isLoading, lakeData, currentConfig, stations, renderHeatmap]);
 
     return (
-        <div className="relative mb-4 overflow-hidden rounded-lg border border-border bg-card shadow aspect-[16/10] sm:aspect-[16/9]">
+        <div className="relative w-full h-full overflow-hidden bg-card border border-border rounded-lg">
             <svg
                 ref={svgRef}
                 viewBox={`0 0 ${SVG_VIEWBOX_WIDTH} ${SVG_VIEWBOX_HEIGHT}`}
                 preserveAspectRatio="xMidYMid meet"
-                className="absolute inset-0 block h-full w-full bg-muted/50"
+                className="absolute inset-0 block h-full w-full bg-muted/30"
                 aria-labelledby="heatmap-title-dynamic"
                 role="img"
             >
-                <title id="heatmap-title-dynamic">{`Heatmap of ${currentConfig?.label || 'data'} for ${formatDateForTitle(currentTimePoint)}`}</title>
-                <desc>{`This heatmap visualizes the ${currentConfig?.label || 'data'} for the Great Salt Lake, with a color gradient indicating the values. The average temperature is ${currentTemperature !== undefined ? `${currentTemperature.toFixed(1)}°F` : 'N/A'}.`}</desc>
+                <title id="heatmap-title-dynamic">{`${currentConfig?.label || 'Data'} Heatmap`}</title>
+                <desc>{`Choropleth heatmap visualization of ${currentConfig?.label || 'data'}.`}</desc>
             </svg>
         </div>
     );

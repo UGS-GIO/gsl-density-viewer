@@ -2,16 +2,15 @@ import React, { useState, useEffect, useRef, useMemo, Dispatch, SetStateAction }
 import { FeatureCollection, Geometry } from 'geojson';
 import HeatmapRenderer, { VariableConfig } from '@/components/map/heatmap-renderer';
 import TimeControls from '@/components/ui/time-controls';
-import InfoPanel from '@/components/ui/info-panel';
+import * as d3 from 'd3';
 import { AllLoadedData, ProcessedStation, SiteDataResult, VariableKey, loadGeoJsonData, loadSiteAndTempData } from '@/lib/loaders/';
-import { createSimpleGeoJSON } from '@/lib/utils';
-import { ModeToggle } from '../mode-toggle';
+import { createSimpleGeoJSON, calculateAverageDensity } from '@/lib/utils';
+import Legend from '@/components/map/legend';
 
 export type LakeFeatureProperties = {
     name?: string;
     [key: string]: any;
 } | null;
-
 
 export type StationDataValues = Record<string, number | undefined>;
 type DataRanges = Record<string, [number, number]>;
@@ -19,14 +18,6 @@ type DataRanges = Record<string, [number, number]>;
 interface GeoJsonResult {
     data: FeatureCollection<Geometry, LakeFeatureProperties> | null;
     error: string | null;
-}
-
-interface VariableSelectorProps {
-    variables: VariableKey[];
-    selectedVar: VariableKey;
-    onChange: Dispatch<SetStateAction<VariableKey>>;
-    isLoading: boolean;
-    variableConfig: Record<string, VariableConfig | undefined>;
 }
 
 /**
@@ -46,11 +37,10 @@ const GreatSaltLakeHeatmap: React.FC = () => {
     const [playing, setPlaying] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [usingMockData, setUsingMockData] = useState<boolean>(false);
-    const [retries, setRetries] = useState<number>(0); // Retries for data loading
-    const MAX_RETRIES = 3; // Max retries for data loading
+    const [retries, setRetries] = useState<number>(0);
+    const MAX_RETRIES = 3;
 
     const playTimerRef = useRef<number | null>(null);
-
     const ANIMATION_INTERVAL = 500;
 
     const VARIABLE_CONFIGS = useMemo((): Record<string, VariableConfig> => ({
@@ -62,7 +52,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
             key: 'salinity', label: 'Salinity (EOS)', unit: 'g/L', precision: 1,
             interpolate: 'interpolateGreens', defaultRange: [50, 250]
         },
-        temperature: { // Primarily for info display, not selectable for heatmap by default
+        temperature: {
             key: 'temperature', label: 'Avg Temp', unit: '°F', precision: 1,
             interpolate: 'interpolateOrRd', defaultRange: [0, 100]
         }
@@ -70,7 +60,6 @@ const GreatSaltLakeHeatmap: React.FC = () => {
 
     useEffect(() => {
         let isMounted = true;
-
         const loadInitialData = async (attempt: number) => {
             if (!isMounted) return;
             setIsLoading(true);
@@ -80,7 +69,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                 const geoJsonResult: GeoJsonResult = await loadGeoJsonData();
                 if (!isMounted) return;
                 setLakeData(geoJsonResult.data || createSimpleGeoJSON());
-                if (geoJsonResult.error) currentErrors.push(geoJsonResult.error);
+                if (geoJsonResult.error != null) currentErrors.push(geoJsonResult.error);
             } catch (err: any) {
                 console.error('GreatSaltLakeHeatmap: Error in GeoJSON loading:', err);
                 currentErrors.push('Failed to load lake outline. Using simplified version.');
@@ -91,14 +80,14 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                 const dataResult: SiteDataResult = await loadSiteAndTempData();
                 if (!isMounted) return;
 
-                if (dataResult.error && attempt < MAX_RETRIES - 1) {
+                if (dataResult.error != null && attempt < MAX_RETRIES - 1) {
                     console.warn(`Data load attempt ${attempt + 1} failed: ${dataResult.error}. Retrying...`);
-                    currentErrors.push(dataResult.error); // Keep error for now
-                    setError(currentErrors.join('. ')); // Show intermediate error
-                    setRetries(prev => prev + 1); // Trigger re-run via dependency change
+                    currentErrors.push(dataResult.error);
+                    setError(currentErrors.join('. '));
+                    setRetries(prev => prev + 1);
                     return;
                 }
-                if (dataResult.error) { // Max retries reached or non-retryable error
+                if (dataResult.error != null) {
                     currentErrors.push(dataResult.error);
                 }
 
@@ -116,14 +105,13 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                 const defaultVar: VariableKey = 'density';
                 const initialSelectedVar = heatmapVars.includes(defaultVar) ? defaultVar : (heatmapVars[0] || 'density');
                 setSelectedVariable(initialSelectedVar);
-                setCurrentTimeIndex(dataResult.timePoints && dataResult.timePoints.length > 0 ? dataResult.timePoints.length - 1 : 0);
+                setCurrentTimeIndex(dataResult.timePoints != null && dataResult.timePoints.length > 0 ? dataResult.timePoints.length - 1 : 0);
 
                 if (dataResult.usingMockData) setUsingMockData(true);
 
             } catch (err: any) {
                 console.error('GreatSaltLakeHeatmap: Critical error in site data loading pipeline:', err);
                 currentErrors.push(`Failed to process site data. ${usingMockData ? "Using simulated data." : "No data to display."}`);
-                // Fallback state for critical failure (if not already handled by loadSiteAndTempData's own fallback)
                 if (isMounted) {
                     setStations([]);
                     setTimePoints([]);
@@ -149,9 +137,8 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         return () => {
             isMounted = false;
         };
-    }, [VARIABLE_CONFIGS, retries]);
+    }, [VARIABLE_CONFIGS, retries, usingMockData]);
 
-    // Animation Effect
     useEffect(() => {
         if (playing && timePoints.length > 0) {
             playTimerRef.current = window.setInterval(() => {
@@ -183,23 +170,22 @@ const GreatSaltLakeHeatmap: React.FC = () => {
     // currentDataForTimepoint is specifically for the HeatmapRenderer (station-based data)
     const currentDataForTimepoint = useMemo((): StationDataValues | {} => {
         if (selectedVariable === 'density' || selectedVariable === 'salinity') {
-            const dataSet = allData[selectedVariable]; // This is TimePointStationData | undefined
-            if (dataSet) {
+            const dataSet = allData[selectedVariable];
+            if (dataSet != null) {
                 return dataSet[currentTimePoint] || {};
             }
         }
-        return {}; // Return empty for 'temperature' or if data missing
+        return {};
     }, [allData, selectedVariable, currentTimePoint]);
 
-
-    const currentConfig = useMemo(() => {
+    const currentConfig = useMemo((): VariableConfig => {
         return VARIABLE_CONFIGS[selectedVariable] || {
             key: selectedVariable, label: selectedVariable.toUpperCase(), unit: '', precision: 2,
             interpolate: 'interpolateBlues', defaultRange: [0, 1]
         } as VariableConfig;
     }, [selectedVariable, VARIABLE_CONFIGS]);
 
-    const currentRange = useMemo(() => {
+    const currentRange = useMemo((): [number, number] => {
         return dataRanges[selectedVariable] || currentConfig.defaultRange;
     }, [dataRanges, selectedVariable, currentConfig.defaultRange]);
 
@@ -208,70 +194,62 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         return typeof tempTimePointData === 'number' ? tempTimePointData : undefined;
     }, [allData, currentTimePoint]);
 
-    const VariableSelector: React.FC<VariableSelectorProps> = ({ variables, selectedVar, onChange, isLoading, variableConfig }) => (
-        <div className="mb-4 text-center">
-            <label htmlFor="variable-select" className="mr-2 text-sm font-medium text-foreground">
-                Show:
-            </label>
-            <select
-                id="variable-select"
-                value={selectedVar}
-                onChange={(e) => onChange(e.target.value as VariableKey)}
-                disabled={isLoading || variables.length <= 1}
-                className="py-1.5 pl-3 pr-8 text-sm rounded-md border border-input bg-background shadow-sm focus:border-primary focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-            >
-                {variables.map(variableKey => (
-                    <option key={variableKey} value={variableKey}>
-                        {variableConfig[variableKey]?.label || variableKey}
-                        {variableConfig[variableKey]?.unit ? ` (${variableConfig[variableKey]?.unit})` : ''}
-                    </option>
-                ))}
-            </select>
-        </div>
-    );
+    const avgValueForDisplay = useMemo(() => {
+        if (currentConfig != null && currentConfig.key !== 'temperature' && currentDataForTimepoint != null) {
+            return calculateAverageDensity(currentDataForTimepoint as StationDataValues);
+        }
+        return undefined;
+    }, [currentDataForTimepoint, currentConfig]);
+
+    const legendColorScale = useMemo((): d3.ScaleSequential<number, string> | null => {
+        if (currentConfig == null || currentRange == null || currentConfig.interpolate == null) return null;
+        const interpolatorName: string = currentConfig.interpolate;
+        const colorInterpolator = ((d3 as any)[interpolatorName] || d3.interpolateBlues) as (t: number) => string;
+        return d3.scaleSequential(colorInterpolator).domain([currentRange[1], currentRange[0]]) as unknown as d3.ScaleSequential<number, string>;
+    }, [currentConfig, currentRange]);
+
+    const formatDateForTitle = (timePoint: string): string => {
+        if (timePoint == null || timePoint === '') return 'Date N/A';
+        try {
+            const dateParts = timePoint.split('-');
+            const year = parseInt(dateParts[0]);
+            const month = parseInt(dateParts[1]) - 1; // Month is 0-indexed for Date constructor
+            if (dateParts.length === 2) { // YYYY-MM
+                return new Date(year, month).toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+            } else if (dateParts.length === 3) { // YYYY-MM-DD
+                const day = parseInt(dateParts[2]);
+                return new Date(year, month, day).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+            }
+            return timePoint; // Fallback for unexpected format
+        } catch (e) {
+            return timePoint;
+        }
+    };
 
     return (
-        <div className="flex h-full w-full max-w-6xl flex-col rounded-lg bg-card p-4 shadow-xl sm:p-6 text-card-foreground">
-            <header className="mb-4">
-                <h2 className="text-center text-2xl font-bold text-primary sm:text-3xl">
-                    Great Salt Lake Heatmap
-                </h2>
-                <p className="text-center text-sm text-muted-foreground sm:text-base">
-                    Monthly Chemical Conditions Visualization
-                </p>
-            </header>
+        <div className="flex h-screen w-screen flex-col bg-background text-foreground overflow-hidden">
 
-            {/* Status Messages */}
-            {error && (
+
+            {/* Error and Status Messages */}
+            {error != null && (
                 <div className="mb-4 rounded border border-destructive/50 bg-destructive/10 p-3 text-center text-sm text-destructive" role="alert">
                     <strong>Warning:</strong> {error}
                 </div>
             )}
-            {usingMockData && !error && (
+            {usingMockData && error == null && (
                 <div className="mb-4 rounded border border-primary/50 bg-primary/10 p-3 text-center text-sm text-primary" role="status">
                     <strong>Note:</strong> Using simulated or incomplete data for demonstration.
                 </div>
             )}
 
-            {availableVariables.length > 0 && (
-                <VariableSelector
-                    variables={availableVariables}
-                    selectedVar={selectedVariable}
-                    onChange={setSelectedVariable}
-                    isLoading={isLoading}
-                    variableConfig={VARIABLE_CONFIGS}
-                />
-            )}
-
-            {/* Main content area: Visualization and Controls */}
-            <div className="relative mb-6 flex flex-grow flex-col rounded-lg bg-muted/50 p-2 shadow-inner sm:p-4 min-h-[500px]">
+            {/* Main Map Area */}
+            <div className="relative flex-grow bg-muted/30 overflow-hidden">
                 {isLoading && (
                     <div className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-background/80 backdrop-blur-sm">
                         <p className="text-xl text-primary animate-pulse">Loading data...</p>
                     </div>
                 )}
-                {/* This div will contain the HeatmapRenderer and allow it to size correctly */}
-                <div className="relative flex-grow">
+                {!isLoading && lakeData != null && currentConfig != null && currentRange != null && (
                     <HeatmapRenderer
                         lakeData={lakeData}
                         stations={stations}
@@ -282,24 +260,76 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                         currentTimePoint={currentTimePoint}
                         isLoading={isLoading}
                     />
-                </div>
-                {!isLoading && timePoints.length > 0 && (
-                    <TimeControls
-                        playing={playing}
-                        setPlaying={setPlaying}
-                        currentTimeIndex={currentTimeIndex}
-                        setCurrentTimeIndex={setCurrentTimeIndex}
-                        timePoints={timePoints}
-                        currentTimePoint={currentTimePoint}
-                        isLoading={isLoading}
-                    />
                 )}
             </div>
 
-            <div className="py-4 border-t border-border">
-                <ModeToggle />
+
+            {/* Right Group: Legend and Mode Toggle */}
+            <div className="flex justify-between items-center sm:items-end gap-x-2 md:gap-x-4 flex-shrink-0 mx-4 mt-2">
+                {/* Header */}
+                <header className="shrink-0 p-2 text-center bg-card shadow-sm">
+                    {currentConfig != null && currentTimePoint != null && !isLoading && (
+                        <>
+                            <h2 className="text-lg font-semibold text-primary sm:text-xl truncate">
+                                Great Salt Lake {currentConfig.label} - {formatDateForTitle(currentTimePoint)}
+                            </h2>
+                            <p className="text-xs text-muted-foreground sm:text-sm truncate">
+                                Avg Temp: {currentTemperature !== undefined ? `${currentTemperature.toFixed(1)}°F` : 'N/A'}
+                                {currentConfig.key !== 'temperature' && avgValueForDisplay !== undefined && avgValueForDisplay !== null && !isNaN(avgValueForDisplay) && (
+                                    ` | Avg ${currentConfig.label}: ${avgValueForDisplay.toFixed(currentConfig.precision)} ${currentConfig.unit}`
+                                )}
+                            </p>
+                        </>
+                    )}
+                    {isLoading && (
+                        <h2 className="text-lg font-semibold text-primary sm:text-xl">Loading Map Data...</h2>
+                    )}
+                    {currentConfig == null && !isLoading && (
+                        <h2 className="text-lg font-semibold text-primary sm:text-xl">Great Salt Lake Visualization</h2>
+                    )}
+                </header>
+                {!isLoading && legendColorScale != null && currentConfig != null && currentRange != null && (
+                    <div className="hidden md:block legend-wrapper">
+                        <svg width={450} height={50} aria-label="Data legend">
+                            <g transform="translate(5, 5)">
+                                <Legend
+                                    colorScale={legendColorScale}
+                                    currentRange={currentRange}
+                                    currentConfig={{ label: currentConfig.label, unit: currentConfig.unit }}
+                                    width={420}
+                                    barHeight={10}
+                                    tickCount={3}
+                                    marginTop={15}
+                                    marginLeft={15}
+                                    marginRight={15}
+                                    marginBottom={25}
+                                />
+                            </g>
+                        </svg>
+                    </div>
+                )}
             </div>
-            <InfoPanel />
+
+            {/* Bottom Control Bar */}
+            <div className="flex flex-col sm:flex-row items-center sm:items-end justify-between gap-y-3 gap-x-4 border-t border-border bg-card shadow-sm">
+                <div className="w-full order-last sm:order-2 sm:flex-grow sm:basis-0 min-w-0 flex justify-center px-0 sm:px-2 md:px-4">
+                    {!isLoading && timePoints.length > 0 && (
+                        <TimeControls
+                            variables={availableVariables}
+                            selectedVar={selectedVariable}
+                            onChange={setSelectedVariable}
+                            variableConfig={VARIABLE_CONFIGS}
+                            playing={playing}
+                            setPlaying={setPlaying}
+                            currentTimeIndex={currentTimeIndex}
+                            setCurrentTimeIndex={setCurrentTimeIndex}
+                            timePoints={timePoints}
+                            currentTimePoint={currentTimePoint}
+                            isLoading={isLoading}
+                        />
+                    )}
+                </div>
+            </div>
         </div>
     );
 };

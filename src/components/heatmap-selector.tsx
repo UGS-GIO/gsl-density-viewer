@@ -1,6 +1,3 @@
-// Assuming this component might be in its own file, e.g., src/components/ui/VariableSelector.tsx
-// Or you can keep it inline in GreatSaltLakeHeatmap.tsx and adjust imports.
-
 import React, { Dispatch, SetStateAction } from 'react';
 import {
     Select,
@@ -13,8 +10,7 @@ import { Label } from "@/components/ui/label";
 import { VariableKey } from '@/lib/loaders';
 import { VariableConfig } from '@/components/map/heatmap-renderer';
 
-// Props for the VariableSelector component
-interface VariableSelectorProps {
+interface HeatmapSelectorProps {
     variables: VariableKey[];
     selectedVar: VariableKey;
     onChange: Dispatch<SetStateAction<VariableKey>>;
@@ -22,7 +18,7 @@ interface VariableSelectorProps {
     variableConfig: Record<string, VariableConfig | undefined>;
 }
 
-const VariableSelector: React.FC<VariableSelectorProps> = ({
+const HeatmapSelector: React.FC<HeatmapSelectorProps> = ({
     variables,
     selectedVar,
     onChange,
@@ -39,15 +35,13 @@ const VariableSelector: React.FC<VariableSelectorProps> = ({
             <Select
                 value={selectedVar}
                 onValueChange={(value: string) => {
-                    // The value from Shadcn's Select onValueChange is a string.
-                    // We cast it to VariableKey, assuming Item values are valid VariableKeys.
                     onChange(value as VariableKey);
                 }}
                 disabled={isDisabled}
             >
                 <SelectTrigger
                     id="variable-select"
-                    className="w-[180px] sm:w-[220px] text-sm py-1.5 h-auto data-[disabled]:opacity-70" // Adjusted class for better height & disabled state
+                    className="min-w-xs max-w-2xl text-sm py-1.5 h-auto data-[disabled]:opacity-70"
                 >
                     <SelectValue placeholder="Select variable..." />
                 </SelectTrigger>
@@ -68,4 +62,4 @@ const VariableSelector: React.FC<VariableSelectorProps> = ({
     );
 };
 
-export default VariableSelector;
+export default HeatmapSelector;

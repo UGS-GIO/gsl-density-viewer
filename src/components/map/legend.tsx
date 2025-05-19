@@ -1,122 +1,127 @@
+import React, { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
-export interface LegendProps {
-    /** The D3 selection of the SVG <g> element to draw the legend into. */
-    svg: d3.Selection<SVGGElement, unknown, null, undefined>;
-    /** The D3 color scale used for the heatmap. */
-    colorScale: d3.ScaleSequential<number, string>; // Takes a number, returns a color string
-    /** The min and max values of the data range for the legend's scale. */
-    range: [number, number];
-    /** The label or title for the legend (e.g., "Density (g/cm³)"). */
+interface LegendCurrentConfig {
     label: string;
-    /** The width of the legend's color bar. */
-    width: number;
-    /** The height of the legend's color bar. */
-    height: number;
-    /** Optional: Number of ticks to suggest for the axis. D3 might adjust this. Defaults to 5. */
-    ticks?: number;
-    /** Optional: Tick format string (e.g., ".2f"). Defaults to ".2f". */
-    tickFormat?: string;
+    unit: string;
 }
 
-/**
- * Renders a color scale legend directly into a D3 SVG group selection.
- * This is a D3 utility function, not a React component.
- */
-const Legend = ({
-    svg,
+interface LegendComponentProps {
+    colorScale: d3.ScaleSequential<number, string>;
+    currentRange: [number, number];
+    currentConfig: LegendCurrentConfig;
+    width?: number;
+    barHeight?: number;
+    tickCount?: number;
+    marginTop?: number;
+    marginRight?: number;
+    marginBottom?: number;
+    marginLeft?: number;
+}
+
+const Legend: React.FC<LegendComponentProps> = ({
     colorScale,
-    range,
-    label,
-    width,
-    height,
-    ticks = 5, // Default to 5 ticks
-    tickFormat = '.2f', // Default to 2 decimal places
-}: LegendProps): void => {
-    // Clear any previous legend content in this group
-    svg.selectAll('*').remove();
+    currentRange,
+    currentConfig,
+    width = 200,
+    barHeight = 10,
+    tickCount = 5,
+    marginTop = 30,
+    marginRight = 0,
+    marginBottom = 25,
+    marginLeft = 0,
+}) => {
+    const gRef = useRef<SVGGElement>(null);
 
-    // Optional: Add a semi-transparent background for better readability if legend overlaps content
-    svg.append('rect')
-        .attr('x', -10) // Slight padding
-        .attr('y', -25) // Ample space for title
-        .attr('width', width + 20)
-        .attr('height', height + 50) // Space for title and axis
-        .attr('fill', 'rgba(255, 255, 255, 0.85)') // White with some transparency
-        .attr('rx', 4) // Rounded corners
-        .attr('ry', 4);
+    useEffect(() => {
+        if (!gRef.current || !colorScale || !currentRange || !currentConfig) {
+            if (gRef.current) d3.select(gRef.current).selectAll('*').remove();
+            return;
+        }
 
-    // Legend title
-    svg.append('text')
-        .attr('x', width / 2) // Centered above the color bar
-        .attr('y', -8)      // Position above the color bar
-        .attr('text-anchor', 'middle')
-        .style('font-size', '12px')
-        .style('font-weight', '600') // Semi-bold
-        .style('fill', '#333')       // Darker text color
-        .text(label);
+        const svgGroupSelection = d3.select(gRef.current);
+        svgGroupSelection.selectAll('*').remove(); // Clear previous render
 
-    // Create a linear scale for the legend's axis
-    const legendScale = d3.scaleLinear().domain(range).range([0, width]);
+        const innerWidth = width - marginLeft - marginRight;
 
-    // Create and configure the legend axis
-    const legendAxis = d3
-        .axisBottom(legendScale)
-        .ticks(ticks)
-        .tickFormat(d3.format(tickFormat))
-        .tickSize(height + 4) // Ticks extend slightly below the color bar
-        .tickPadding(6);      // Padding between ticks and text
+        // --- 1. Draw the Legend Title/Label ---
+        const titleText = `${currentConfig.label}${currentConfig.unit ? ` (${currentConfig.unit})` : ''}`;
+        svgGroupSelection.append('text')
+            .attr('class', 'text-sm font-semibold text-foreground')
+            .style('fill', 'currentColor') // Apply the CSS 'color' (from text-foreground) to SVG 'fill'
+            .attr('x', marginLeft + innerWidth / 2)
+            .attr('y', marginTop - 10) // Position title baseline above the bar
+            .attr('text-anchor', 'middle')
+            .text(titleText);
 
-    // Define a unique ID for the gradient for this specific legend instance
-    const gradientId = `legend-gradient-${Math.random().toString(36).substring(2, 15)}`;
+        // --- 2. Draw the Color Ramp ---
+        const rampGroup = svgGroupSelection.append('g')
+            .attr('transform', `translate(${marginLeft}, ${marginTop})`);
 
-    const defs = svg.append('defs');
-    const gradient = defs
-        .append('linearGradient')
-        .attr('id', gradientId)
-        .attr('x1', '0%')
-        .attr('y1', '0%')
-        .attr('x2', '100%')
-        .attr('y2', '0%');
+        const gradientId = `legend-gradient-${Math.random().toString(36).substr(2, 9)}`;
+        const defs = svgGroupSelection.append('defs');
+        const linearGradient = defs.append('linearGradient')
+            .attr('id', gradientId)
+            .attr('x1', '0%')
+            .attr('y1', '0%')
+            .attr('x2', '100%')
+            .attr('y2', '0%');
 
-    // Generate color stops for the gradient
-    // Using a fixed number of stops for smooth gradient representation
-    const numberOfStops = 20; // More stops can create a smoother visual gradient
-    const [minVal, maxVal] = range;
+        const numStops = 20;
+        const [minVal, maxVal] = currentRange;
+        if (typeof minVal !== 'number' || typeof maxVal !== 'number' || minVal > maxVal) {
+            console.error("Invalid currentRange for legend:", currentRange);
+            svgGroupSelection.selectAll('*').remove();
+            return;
+        }
 
-    d3.range(numberOfStops + 1).forEach((i) => {
-        const t = i / numberOfStops;
-        const value = minVal + (maxVal - minVal) * t;
-        gradient.append('stop')
-            .attr('offset', `${t * 100}%`)
-            .attr('stop-color', colorScale(value));
-    });
+        for (let i = 0; i <= numStops; i++) {
+            const t = i / numStops;
+            const value = minVal + (maxVal - minVal) * t;
+            linearGradient.append('stop')
+                .attr('offset', `${t * 100}%`)
+                .attr('stop-color', colorScale(value));
+        }
 
-    // Draw the color bar rectangle filled with the gradient
-    svg.append('rect')
-        .attr('x', 0)
-        .attr('y', 0)
-        .attr('width', width)
-        .attr('height', height)
-        .style('fill', `url(#${gradientId})`);
+        rampGroup.append('rect')
+            .attr('x', 0)
+            .attr('y', 0)
+            .attr('width', innerWidth)
+            .attr('height', barHeight)
+            .style('fill', `url(#${gradientId})`);
 
-    // Draw the legend axis
-    const axisGroup = svg
-        .append('g')
-        .attr('class', 'legend-axis') // Class for potential CSS styling
-        .attr('transform', `translate(0, 0)`) // Position axis below the color bar
-        .call(legendAxis);
+        // --- 3. Draw the Axis ---
+        const axisScale = d3.scaleLinear()
+            .domain(currentRange)
+            .range([0, innerWidth]);
 
-    // Style axis ticks and text for better readability
-    axisGroup.selectAll('line')
-        .attr('stroke', '#555'); // Color of tick lines
+        const axisGenerator = d3.axisBottom(axisScale)
+            .ticks(tickCount)
+            .tickSizeOuter(0)
+            .tickSizeInner(6);
 
-    axisGroup.selectAll('text')
-        .style('font-size', '10px')
-        .style('fill', '#333');
+        const axisGroup = svgGroupSelection.append('g')
+            .attr('transform', `translate(${marginLeft}, ${marginTop + barHeight})`);
 
-    // Remove the default domain path (the main axis line) for a cleaner look
-    axisGroup.select('.domain').remove();
+        axisGroup.call(axisGenerator)
+            .selectAll("text")
+            .attr('class', 'text-sm text-muted-foreground')
+            .style('fill', 'currentColor') // Apply the CSS 'color' (from text-muted-foreground) to SVG 'fill'
+            .style("text-anchor", (d, i, nodes) => {
+                if (nodes.length <= 1) return "middle";
+                if (i === 0) return "start";
+                if (i === nodes.length - 1) return "end";
+                return "middle";
+            });
+
+        axisGroup.selectAll(".tick line")
+            .attr('class', 'text-theme-border') // Apply a class that sets CSS 'color' to your border color
+            .style("stroke", "currentColor");    // Make SVG stroke use that CSS 'color'
+        axisGroup.select(".domain").remove();
+
+    }, [colorScale, currentRange, currentConfig, width, barHeight, tickCount, marginTop, marginRight, marginBottom, marginLeft]);
+
+    return <g ref={gRef} className="heatmap-legend-group" />;
 };
 
 export default Legend;
