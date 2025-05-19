@@ -270,7 +270,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                 <header className="shrink-0 p-2 text-center bg-card shadow-sm">
                     {currentConfig != null && currentTimePoint != null && !isLoading && (
                         <>
-                            <h2 className="text-lg font-semibold text-primary sm:text-xl truncate">
+                            <h2 className="text-lg font-semibold text-foreground sm:text-xl truncate">
                                 Great Salt Lake {currentConfig.label} - {formatDateForTitle(currentTimePoint)}
                             </h2>
                             <p className="text-xs text-muted-foreground sm:text-sm truncate">
