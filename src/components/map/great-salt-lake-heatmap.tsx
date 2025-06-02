@@ -48,25 +48,24 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         }
     }), []);
 
-    // --- React Query Data Fetching ---
 
     // Fetch GeoJSON data with explicit types
     const { data: geoJsonResult, error: geoJsonError } = useQuery<GeoJsonResult, Error>({
         queryKey: ['geoJsonData'],
         queryFn: loadGeoJsonData,
-        staleTime: Infinity, // This data is static and won't change
+        staleTime: Infinity,
     });
 
     // Fetch site and temperature data with explicit types
     const { data: siteDataResult, error: siteDataError, isLoading: isSiteDataLoading } = useQuery<SiteDataResult, Error>({
         queryKey: ['siteAndTempData'],
         queryFn: loadSiteAndTempData,
-        retry: 3, // Retry up to 3 times on failure
+        retry: 3,
     });
 
 
-    // --- Data Derivation from Queries with Explicit Types ---
 
+    // Lake and site data are memoized to prevent unnecessary re-renders
     const lakeData: FeatureCollection<Geometry, LakeFeatureProperties> = useMemo(() => geoJsonResult?.data || createSimpleGeoJSON(), [geoJsonResult]);
     const usingMockData: boolean = useMemo(() => siteDataResult?.usingMockData || false, [siteDataResult]);
 
@@ -116,7 +115,6 @@ const GreatSaltLakeHeatmap: React.FC = () => {
 
     // Calculate the current time point based on the current index
     const currentTimePoint: string = useMemo(() => timePoints[currentTimeIndex] || '', [timePoints, currentTimeIndex]);
-
 
     // currentDataForTimepoint is specifically for the HeatmapRenderer (station-based data)
     const currentDataForTimepoint: StationDataValues | {} = useMemo(() => {
@@ -262,7 +260,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                         <TimeControls
                             variables={availableVariables}
                             selectedVar={selectedVariable}
-                            onChange={setSelectedVariable as Dispatch<SetStateAction<VariableKey>>}
+                            onChange={setSelectedVariable}
                             variableConfig={VARIABLE_CONFIGS}
                             playing={playing}
                             setPlaying={setPlaying}
