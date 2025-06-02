@@ -66,7 +66,13 @@ const GreatSaltLakeHeatmap: React.FC = () => {
 
 
     // Lake and site data are memoized to prevent unnecessary re-renders
-    const lakeData: FeatureCollection<Geometry, LakeFeatureProperties> = useMemo(() => geoJsonResult?.data || createSimpleGeoJSON(), [geoJsonResult]);
+    const lakeData: FeatureCollection<Geometry, LakeFeatureProperties> | null = useMemo(() => {
+        if (geoJsonError) {
+            console.error("Error loading GeoJSON data:", geoJsonError);
+            return null; // Return null if there's an error
+        }
+        return geoJsonResult?.data || createSimpleGeoJSON();
+    }, [geoJsonResult, geoJsonError]);
     const usingMockData: boolean = useMemo(() => siteDataResult?.usingMockData || false, [siteDataResult]);
 
     // Derived states from siteDataResult to prevent re-renders
