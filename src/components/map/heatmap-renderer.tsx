@@ -316,8 +316,8 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
                 const g = stationGroup.append('g').attr('transform', `translate(${x}, ${y})`);
                 g.append('circle').attr('r', 5)
                     .attr('fill', fillColor)
-                    .attr('stroke', 'hsl(var(--foreground))')
-                    .attr('stroke-width', 1);
+                    .attr('stroke', 'black')
+                    .attr('stroke-width', 1.25);
                 g.append('title').text(hasData ? `${station.name}: ${value.toFixed(currentConfig.precision)} ${currentConfig.unit}` : `${station.name}: No data`);
 
                 const offset = stationLabelOffsets[station.id] || DEFAULT_STATION_LABEL_OFFSET;
