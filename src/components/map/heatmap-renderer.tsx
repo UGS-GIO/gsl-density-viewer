@@ -343,7 +343,7 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
     }, [projection, isLoading, lakeData, currentConfig, stations, renderHeatmap]);
 
     return (
-        <div className="relative w-full h-full overflow-hidden bg-card border border-border rounded-lg">
+        <div className="relative w-full h-full overflow-hidden bg-card border border-border">
             <svg
                 ref={svgRef}
                 viewBox={`0 0 ${SVG_VIEWBOX_WIDTH} ${SVG_VIEWBOX_HEIGHT}`}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, Dispatch, SetStateAction } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react'; // Removed Dispatch, SetStateAction as they are not explicitly used for props
 import { useQuery } from '@tanstack/react-query';
 import { FeatureCollection, Geometry } from 'geojson';
 import HeatmapRenderer, { VariableConfig } from '@/components/map/heatmap-renderer';
@@ -64,15 +64,15 @@ const GreatSaltLakeHeatmap: React.FC = () => {
     });
 
 
-
     // Lake and site data are memoized to prevent unnecessary re-renders
     const lakeData: FeatureCollection<Geometry, LakeFeatureProperties> | null = useMemo(() => {
         if (geoJsonError) {
             console.error("Error loading GeoJSON data:", geoJsonError);
-            return null; // Return null if there's an error
+            return null;
         }
         return geoJsonResult?.data || createSimpleGeoJSON();
     }, [geoJsonResult, geoJsonError]);
+
     const usingMockData: boolean = useMemo(() => siteDataResult?.usingMockData || false, [siteDataResult]);
 
     // Derived states from siteDataResult to prevent re-renders
@@ -96,6 +96,13 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         }
     }, [timePoints, currentTimeIndex]);
 
+    useEffect(() => {
+        if (availableVariables.length > 0 && !availableVariables.includes(selectedVariable)) {
+            setSelectedVariable(availableVariables[0]);
+        }
+    }, [availableVariables, selectedVariable]);
+
+
     // Animation timer effect
     useEffect(() => {
         if (playing && timePoints.length > 0) {
@@ -116,7 +123,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         return () => {
             if (playTimerRef.current !== null) clearInterval(playTimerRef.current);
         };
-    }, [playing, timePoints.length]);
+    }, [playing, timePoints.length, ANIMATION_INTERVAL]);
 
 
     // Calculate the current time point based on the current index
@@ -152,16 +159,16 @@ const GreatSaltLakeHeatmap: React.FC = () => {
 
     // Calculate the average value for display, if applicable
     const avgValueForDisplay: number | undefined = useMemo(() => {
-        if (currentConfig.key !== 'temperature' && currentDataForTimepoint) {
+        if (currentConfig.key !== 'temperature' && currentDataForTimepoint && Object.keys(currentDataForTimepoint).length > 0) {
             const avg = calculateAverageDensity(currentDataForTimepoint as StationDataValues);
-            return avg === null ? undefined : avg;
+            return avg === null || isNaN(avg) ? undefined : avg;
         }
         return undefined;
     }, [currentDataForTimepoint, currentConfig]);
 
     // Create a color scale for the legend based on the current configuration and range
     const legendColorScale: d3.ScaleSequential<number, string> | null = useMemo(() => {
-        if (!currentConfig?.interpolate) return null;
+        if (!currentConfig?.interpolate || !currentRange) return null;
         const colorInterpolator = (d3 as any)[currentConfig.interpolate] || d3.interpolateBlues;
         return d3.scaleSequential(colorInterpolator).domain([currentRange[1], currentRange[0]]);
     }, [currentConfig, currentRange]);
@@ -179,15 +186,19 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                 return new Date(year, month, day).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
             }
             return timePoint;
-        } catch (e) { return timePoint; }
+        } catch (e) {
+            console.error("Error formatting date:", e);
+            return timePoint;
+        }
     };
 
     const combinedError: string | null = useMemo(() => {
         const errors: string[] = [];
-        if (geoJsonError) errors.push(geoJsonError.message);
-        else if (geoJsonResult?.error) errors.push(geoJsonResult.error);
-        if (siteDataError) errors.push(siteDataError.message);
-        else if (siteDataResult?.error) errors.push(siteDataResult.error);
+        if (geoJsonError) errors.push(`Map outline: ${geoJsonError.message}`);
+        else if (geoJsonResult?.error) errors.push(`Map outline: ${geoJsonResult.error}`);
+
+        if (siteDataError) errors.push(`Site data: ${siteDataError.message}`);
+        else if (siteDataResult?.error) errors.push(`Site data: ${siteDataResult.error}`);
         return errors.length > 0 ? errors.join('. ') : null;
     }, [geoJsonError, geoJsonResult, siteDataError, siteDataResult]);
 
@@ -225,8 +236,9 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                 )}
             </div>
 
-            <div className="flex justify-between items-center sm:items-end gap-x-2 md:gap-x-4 flex-shrink-0 mx-4 mt-2">
-                <header className="shrink-0 p-2 text-center bg-card shadow-sm">
+            {/* Header and Legend Section */}
+            <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-3 flex-shrink-0 mx-2 sm:mx-4 my-2">
+                <header className="shrink-0 p-2 text-center bg-card shadow-sm md:w-auto">
                     {isSiteDataLoading ? (
                         <h2 className="text-lg font-semibold text-primary sm:text-xl">Loading Map Data...</h2>
                     ) : (
@@ -243,16 +255,28 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                         </>
                     )}
                 </header>
-                {!isSiteDataLoading && legendColorScale && (
-                    <div className="hidden md:block legend-wrapper">
-                        <svg width={450} height={50} aria-label="Data legend">
+
+                {!isSiteDataLoading && legendColorScale && currentRange && (
+                    <div className="legend-wrapper flex justify-center md:justify-end w-full md:w-auto h-10 md:h-[50px]">
+                        <svg
+                            viewBox="0 0 450 50" // Defines intrinsic coordinate system & aspect ratio
+                            aria-label="Data legend"
+                            // Fills the parent wrapper. 'meet' ensures it fits & maintains aspect ratio.
+                            className="w-full h-full"
+                            preserveAspectRatio="xMidYMid meet"
+                        >
                             <g transform="translate(5, 5)">
                                 <Legend
                                     colorScale={legendColorScale}
                                     currentRange={currentRange}
                                     currentConfig={{ label: currentConfig.label, unit: currentConfig.unit }}
-                                    width={420} barHeight={10} tickCount={3}
-                                    marginTop={15} marginLeft={15} marginRight={15} marginBottom={25}
+                                    width={420}
+                                    barHeight={10}
+                                    tickCount={3}
+                                    marginTop={15}
+                                    marginLeft={15}
+                                    marginRight={15}
+                                    marginBottom={25}
                                 />
                             </g>
                         </svg>
@@ -260,6 +284,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                 )}
             </div>
 
+            {/* Bottom Control Bar */}
             <div className="flex flex-col sm:flex-row items-center sm:items-end justify-between gap-y-3 gap-x-4 border-t border-border bg-card shadow-sm">
                 <div className="w-full order-last sm:order-2 sm:flex-grow sm:basis-0 min-w-0 flex justify-center px-0 sm:px-2 md:px-4">
                     {!isSiteDataLoading && timePoints.length > 0 && (

@@ -29,9 +29,6 @@ const HeatmapSelector: React.FC<HeatmapSelectorProps> = ({
 
     return (
         <div className="mb-4 flex items-center justify-center gap-x-2 sm:gap-x-3">
-            <Label htmlFor="variable-select" className="text-sm font-medium text-foreground whitespace-nowrap">
-                Show:
-            </Label>
             <Select
                 value={selectedVar}
                 onValueChange={(value: string) => {
