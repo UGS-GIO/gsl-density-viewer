@@ -276,9 +276,24 @@ const GreatSaltLakeHeatmap: React.FC = () => {
             {/* Map Container */}
             <div ref={mapContainerRef} className="absolute inset-0 h-full w-full" />
 
-            {/* Header and Legend as Overlays */}
-            {!isSiteDataLoading && (
-                <div className="absolute top-16 left-1/2 transform -translate-x-1/2 z-10 p-1 bg-card/70 backdrop-blur-sm rounded-md shadow-lg md:top-4 md:left-4 md:-translate-x-0">
+            {/* HeatmapRenderer */}
+            {mapLoaded && mapRef.current && lakeData && stations && currentConfig && currentDataForTimepoint && !isSiteDataLoading && (
+                <HeatmapRenderer
+                    map={mapRef.current}
+                    lakeData={lakeData}
+                    stations={stations}
+                    currentDataForTimepoint={currentDataForTimepoint}
+                    currentTemperature={currentTemperature}
+                    currentRange={currentRange}
+                    currentConfig={currentConfig}
+                    currentTimePoint={currentTimePoint}
+                    isLoading={isSiteDataLoading}
+                />
+            )}
+
+            {/* TimeControls as an Overlay at the Bottom */}
+            <div className="absolute bottom-0 left-0 right-0 z-10 p-2 bg-card/70 backdrop-blur-sm border-t border-border shadow-lg">
+                <div className="flex flex-col md:flex-row items-center justify-around">
                     <header className="p-1 md:p-2 text-center">
                         <h2 className="text-base font-semibold text-foreground sm:text-lg truncate">
                             GSL {currentConfig.label} - {formatDateForTitle(currentTimePoint)}
@@ -291,7 +306,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                         </p>
                     </header>
                     {legendColorScale && currentRange && (
-                        <div className="legend-wrapper flex justify-center w-full h-8 md:h-10 px-2 py-1">
+                        <div className="flex justify-center h-14 md:h-16 px-2 py-1">
                             <svg viewBox="0 0 450 50" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
                                 <g transform="translate(5,5)">
                                     <Legend width={420} barHeight={10} {...{ colorScale: legendColorScale, currentRange, currentConfig, tickCount: 3, marginTop: 15, marginLeft: 15, marginRight: 15, marginBottom: 25 }} />
@@ -300,25 +315,8 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                         </div>
                     )}
                 </div>
-            )}
 
-            {/* HeatmapRenderer as an overlay, only when map and data are ready */}
-            {mapLoaded && mapRef.current && lakeData && stations && currentConfig && currentDataForTimepoint && !isSiteDataLoading && (
-                <HeatmapRenderer
-                    map={mapRef.current}
-                    lakeData={lakeData}
-                    stations={stations}
-                    currentDataForTimepoint={currentDataForTimepoint}
-                    currentTemperature={currentTemperature}
-                    currentRange={currentRange}
-                    currentConfig={currentConfig}
-                    currentTimePoint={currentTimePoint}
-                    isLoading={isSiteDataLoading} // Pass for completeness, though guarded by !isSiteDataLoading
-                />
-            )}
-
-            {/* TimeControls as an Overlay at the Bottom */}
-            <div className="absolute bottom-0 left-0 right-0 z-10 p-2 bg-card/70 backdrop-blur-sm border-t border-border shadow-lg">
+                {/* Time Controls */}
                 {!isSiteDataLoading && timePoints.length > 0 && (
                     <TimeControls
                         variables={availableVariables}

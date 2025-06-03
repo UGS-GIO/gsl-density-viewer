@@ -68,56 +68,10 @@ const TimeControls: React.FC<TimeControlsProps> = ({
     }, [timePoints, setCurrentTimeIndex, playing, setPlaying]);
 
     return (
-        <div className="mt-4 select-none w-full">
-            {/* Main controls container */}
-            <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-5 px-2">
-
-                {/* Play Button */}
-                <div className="flex justify-center w-full lg:w-auto">
-                    <Button
-                        variant={playing && !playPauseButtonDisabled ? 'destructive' : 'default'}
-                        onClick={togglePlay}
-                        disabled={playPauseButtonDisabled}
-                        className={cn(
-                            "lg:w-auto lg:flex-grow-0 lg:flex-shrink-0 transition-colors duration-150 ease-in-out shadow-sm",
-                        )}
-                        aria-pressed={playing}
-                        aria-label={playing ? "Pause animation" : "Play animation"}
-                    >
-                        {playing ? 'Pause' : 'Play Animation'}
-                    </Button>
-                </div>
-
-
-                {/* Heatmap Selector */}
-                {variables.length > 0 && !isLoading && (
-                    <div className="w-full lg:w-auto flex justify-center lg:flex-grow-0 lg:flex-shrink-0">
-                        <HeatmapSelector
-                            variables={variables}
-                            selectedVar={selectedVar}
-                            onChange={onChange}
-                            isLoading={isLoading}
-                            variableConfig={variableConfig}
-                        />
-                    </div>
-                )}
-
-                {/* Date Display */}
-                <div
-                    className="text-sm font-medium text-foreground bg-muted py-1.5 px-3 rounded-md shadow-inner whitespace-nowrap min-w-[160px] w-full lg:w-auto lg:flex-grow-0 lg:flex-shrink-0 text-center"
-                    aria-live="polite"
-                >
-                    {timePoints.length > 0
-                        ? `${formatTimePointForDisplay(currentTimePoint)} (${currentTimeIndex + 1}/${timePoints.length})`
-                        : isLoading
-                            ? 'Loading...'
-                            : 'No time data'}
-                </div>
-            </div>
-
+        <div className="my-4 select-none w-full">
             <div>
                 <div
-                    id="time-display-below-slider"
+                    id="time-display-below-slider" // This is actually above the slider now
                     className="text-center text-xl text-muted-foreground mt-0 h-5 mb-6"
                     aria-live="polite"
                 >
@@ -125,7 +79,7 @@ const TimeControls: React.FC<TimeControlsProps> = ({
                 </div>
 
                 {/* Slider container  */}
-                <div className="px-2 mb-6 mx-2">
+                <div className="px-2 mb-6 mx-2"> {/* Increased bottom margin for space */}
                     <Slider
                         value={[currentTimeIndex]}
                         min={0}
@@ -138,6 +92,56 @@ const TimeControls: React.FC<TimeControlsProps> = ({
                         aria-label="Time Point Slider"
                         aria-controls="time-display-below-slider"
                     />
+                </div>
+
+                {/* Main controls container for Selector, Date Display, and Play Button */}
+                {/* This container will handle stacking on mobile and row layout on desktop */}
+                <div className="flex flex-col lg:flex-row lg:justify-around lg:items-center gap-4 px-2">
+
+                    {/* Heatmap Selector */}
+                    {variables.length > 0 && !isLoading && (
+                        <div className="w-full lg:w-auto flex justify-center">
+                            <HeatmapSelector
+                                variables={variables}
+                                selectedVar={selectedVar}
+                                onChange={onChange}
+                                isLoading={isLoading}
+                                variableConfig={variableConfig}
+                            />
+                        </div>
+                    )}
+
+                    {/* Play Button - Moved to be in the middle for desktop by source order */}
+                    <div className="flex justify-center w-full lg:w-auto">
+                        <Button
+                            variant={playing && !playPauseButtonDisabled ? 'destructive' : 'default'}
+                            onClick={togglePlay}
+                            disabled={playPauseButtonDisabled}
+                            className={cn(
+                                "transition-colors duration-150 ease-in-out shadow-sm",
+                            )}
+                            aria-pressed={playing}
+                            aria-label={playing ? "Pause animation" : "Play animation"}
+                        >
+                            {playing ? 'Pause' : 'Play Animation'}
+                        </Button>
+                    </div>
+
+                    {/* Date Display */}
+                    <div
+                        className={cn(
+                            "text-sm font-medium text-foreground bg-muted py-1.5 px-3 rounded-md shadow-inner whitespace-nowrap text-center",
+                            "w-full lg:w-auto min-w-[160px]",
+                            "hidden sm:block"
+                        )}
+                        aria-live="polite"
+                    >
+                        {timePoints.length > 0
+                            ? `${formatTimePointForDisplay(currentTimePoint)} (${currentTimeIndex + 1}/${timePoints.length})`
+                            : isLoading
+                                ? 'Loading...'
+                                : 'No time data'}
+                    </div>
                 </div>
             </div>
         </div>
