@@ -1,10 +1,11 @@
 import { cn } from '@/lib/utils';
-import React, { Dispatch, SetStateAction, useCallback, useMemo } from 'react';
+import React, { Dispatch, SetStateAction, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Slider } from "@/components/ui/slider";
 import { VariableKey } from '@/lib/loaders';
 import { VariableConfig } from '@/components/map/heatmap-renderer';
 import HeatmapSelector from '@/components/heatmap-selector';
+
 interface TimeControlsProps {
     playing: boolean;
     setPlaying: React.Dispatch<React.SetStateAction<boolean>>;
@@ -13,13 +14,10 @@ interface TimeControlsProps {
     timePoints: string[];
     currentTimePoint: string;
     isLoading: boolean;
-
-    // new vars from the heatmapselector
     variables: VariableKey[];
     selectedVar: VariableKey;
     onChange: Dispatch<SetStateAction<VariableKey>>;
     variableConfig: Record<string, VariableConfig | undefined>;
-
 }
 
 const TimeControls: React.FC<TimeControlsProps> = ({
@@ -38,35 +36,6 @@ const TimeControls: React.FC<TimeControlsProps> = ({
     const togglePlay = useCallback(() => {
         setPlaying((prevPlayingState) => !prevPlayingState);
     }, [setPlaying]);
-
-    const yearTicks = useMemo(() => {
-        if (!timePoints || timePoints.length === 0) return [];
-        const years = new Set<string>();
-        timePoints.forEach((tp) => {
-            if (tp && typeof tp.split === 'function') {
-                const year = tp.split('-')[0];
-                if (year) years.add(year);
-            }
-        });
-
-        const sortedYears = Array.from(years).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
-        if (sortedYears.length === 0) return [];
-
-        const ticks: string[] = [];
-        const step = Math.max(1, Math.floor(sortedYears.length / 6)) || 1;
-
-        for (let i = 0; i < sortedYears.length; i += step) {
-            ticks.push(sortedYears[i]);
-        }
-        if (sortedYears.length > 0 && !ticks.includes(sortedYears[0])) {
-            ticks.unshift(sortedYears[0]);
-        }
-        const lastYear = sortedYears[sortedYears.length - 1];
-        if (lastYear && !ticks.includes(lastYear)) {
-            ticks.push(lastYear);
-        }
-        return Array.from(new Set(ticks)).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
-    }, [timePoints]);
 
     const formatTimePointForDisplay = useCallback((timePoint: string): string => {
         if (!timePoint || typeof timePoint.split !== 'function') return 'Invalid Date';
@@ -99,82 +68,80 @@ const TimeControls: React.FC<TimeControlsProps> = ({
     }, [timePoints, setCurrentTimeIndex, playing, setPlaying]);
 
     return (
-        <div className="mt-4 select-none w-full">
-            <div className="flex justify-between items-center mb-5 px-2">
-                <Button
-                    variant={playing && !playPauseButtonDisabled ? 'destructive' : 'default'}
-                    onClick={togglePlay}
-                    disabled={playPauseButtonDisabled}
-                    className={cn(
-                        "transition-colors duration-150 ease-in-out shadow-sm",
-                    )}
-                    aria-pressed={playing}
-                    aria-label={playing ? "Pause animation" : "Play animation"}
-                >
-                    {playing ? 'Pause' : 'Play Animation'}
-                </Button>
-
-                {/* Left Group: Variable Selector */}
-                {variables.length > 0 && !isLoading && (
-                    <HeatmapSelector
-                        variables={variables}
-                        selectedVar={selectedVar}
-                        onChange={onChange}
-                        isLoading={isLoading}
-                        variableConfig={variableConfig}
-                    />
-                )}
-
+        <div className="my-4 select-none w-full">
+            <div>
                 <div
-                    className="text-sm font-medium text-foreground bg-muted py-1.5 px-3 rounded-md shadow-inner whitespace-nowrap min-w-[160px] text-center"
+                    id="time-display-above-slider"
+                    className="text-center text-xl text-muted-foreground mt-0 h-5 mb-6"
                     aria-live="polite"
                 >
-                    {timePoints.length > 0
-                        ? `${formatTimePointForDisplay(currentTimePoint)} (${currentTimeIndex + 1}/${timePoints.length})`
-                        : isLoading
-                            ? 'Loading...'
-                            : 'No time data'}
+                    {timePoints.length > 0 && formatTimePointForDisplay(currentTimePoint)}
                 </div>
-            </div>
 
-            <div className="relative h-6 mt-1 mb-1 mx-2">
-                {yearTicks.map((year) => {
-                    const index = timePoints.findIndex((tp) => tp && tp.startsWith(`${year}-`));
-                    if (index === -1 || timePoints.length <= 1) return null;
-                    const positionPercent = (index / (timePoints.length - 1)) * 100;
-                    return (
-                        <div
-                            key={year}
-                            className="absolute bottom-0 text-xs text-muted-foreground transform -translate-x-1/2 text-center cursor-default"
-                            style={{ left: `${positionPercent}%` }}
+                {/* Slider container */}
+                <div className="px-2 mb-1 mx-2">
+                    <Slider
+                        value={[currentTimeIndex]}
+                        min={0}
+                        max={timePoints.length > 0 ? timePoints.length - 1 : 0}
+                        step={1}
+                        onValueChange={handleSliderValueChange}
+                        disabled={sliderDisabled}
+                        className={cn("w-full data-[disabled]:opacity-50 data-[disabled]:cursor-not-allowed")}
+                        aria-valuetext={`Time point: ${formatTimePointForDisplay(currentTimePoint)}`}
+                        aria-label="Time Point Slider"
+                        aria-controls="time-display-above-slider"
+                    />
+                </div>
+
+                {/* Container for Play Button, HeatmapSelector, and secondary Date Display. */}
+                <div className="flex flex-col md:flex-row md:justify-center md:items-center gap-4 px-2 mt-3">
+
+                    {/* Play Button - Order 1 on mobile (directly under slider), Order 2 on desktop */}
+                    <div className="w-full md:w-auto flex justify-center order-1 md:order-2">
+                        <Button
+                            variant={playing && !playPauseButtonDisabled ? 'destructive' : 'default'}
+                            onClick={togglePlay}
+                            disabled={playPauseButtonDisabled}
+                            className={cn(
+                                "transition-colors duration-150 ease-in-out shadow-sm px-6",
+                            )}
+                            aria-pressed={playing}
+                            aria-label={playing ? "Pause animation" : "Play animation"}
                         >
-                            {year}
+                            {playing ? 'Pause' : 'Play Animation'}
+                        </Button>
+                    </div>
+
+                    {/* Heatmap Selector - Order 2 on mobile, Order 1 on desktop */}
+                    {variables.length > 0 && !isLoading && (
+                        <div className="w-full md:w-auto flex justify-center order-2 md:order-1">
+                            <HeatmapSelector
+                                variables={variables}
+                                selectedVar={selectedVar}
+                                onChange={onChange}
+                                isLoading={isLoading}
+                                variableConfig={variableConfig}
+                            />
                         </div>
-                    );
-                })}
-            </div>
+                    )}
 
-            <div className="px-2 mb-1">
-                <Slider
-                    value={[currentTimeIndex]}
-                    min={0}
-                    max={timePoints.length > 0 ? timePoints.length - 1 : 0}
-                    step={1}
-                    onValueChange={handleSliderValueChange}
-                    disabled={sliderDisabled}
-                    className={cn("w-full data-[disabled]:opacity-50 data-[disabled]:cursor-not-allowed")}
-                    aria-valuetext={`Time point: ${formatTimePointForDisplay(currentTimePoint)}`}
-                    aria-label="Time Point Slider"
-                    aria-controls="time-display-below-slider"
-                />
-            </div>
-
-            <div
-                id="time-display-below-slider"
-                className="text-center text-xs text-muted-foreground mt-0 h-5"
-                aria-live="polite"
-            >
-                {timePoints.length > 0 && formatTimePointForDisplay(currentTimePoint)}
+                    {/* Date Display (secondary with index/total) - Order 3 on mobile and desktop */}
+                    <div
+                        className={cn(
+                            "text-sm font-medium text-foreground bg-muted py-1.5 px-3 rounded-md shadow-inner whitespace-nowrap text-center order-3 md:order-3",
+                            "w-full md:w-auto min-w-[160px]",
+                            "hidden sm:block"
+                        )}
+                        aria-live="polite"
+                    >
+                        {timePoints.length > 0
+                            ? `${formatTimePointForDisplay(currentTimePoint)} (${currentTimeIndex + 1}/${timePoints.length})`
+                            : isLoading
+                                ? 'Loading...'
+                                : 'No time data'}
+                    </div>
+                </div>
             </div>
         </div>
     );

@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { FeatureCollection, Polygon, Feature } from 'geojson';
-import { LakeFeatureProperties, StationDataValues } from "@/components/map/great-salt-lake-heatmap";
+import { StationDataValues } from "@/components/map/great-salt-lake-heatmap";
+import { LakeDataProps } from "@/components/map/heatmap-renderer";
 
 export function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs))
@@ -36,7 +36,7 @@ export const calculateAverageDensity = (densityMap: StationDataValues): number |
  * Used as a fallback when the real GeoJSON cannot be loaded
  * @returns {Object} - GeoJSON FeatureCollection
  */
-export const createSimpleGeoJSON = (): FeatureCollection<Polygon, LakeFeatureProperties> => {
+export const createSimpleGeoJSON = (): LakeDataProps => {
     // Simple polygon approximating the Great Salt Lake shape
     return {
         type: "FeatureCollection" as const,
