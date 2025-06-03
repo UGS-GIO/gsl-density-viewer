@@ -195,7 +195,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         if (mapRef.current || !mapContainerRef.current) return; // Initialize map only once
 
         const GSL_CENTER: [number, number] = [-112.6, 41.2]; // Lon, Lat for GSL
-        const INITIAL_ZOOM = 9;
+        const INITIAL_ZOOM = 8;
 
         mapRef.current = new maplibregl.Map({
             container: mapContainerRef.current,
