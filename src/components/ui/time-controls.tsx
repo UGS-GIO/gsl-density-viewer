@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import React, { Dispatch, SetStateAction, useCallback, useMemo } from 'react';
+import React, { Dispatch, SetStateAction, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Slider } from "@/components/ui/slider";
 import { VariableKey } from '@/lib/loaders';
@@ -71,15 +71,15 @@ const TimeControls: React.FC<TimeControlsProps> = ({
         <div className="my-4 select-none w-full">
             <div>
                 <div
-                    id="time-display-below-slider" // This is actually above the slider now
+                    id="time-display-above-slider"
                     className="text-center text-xl text-muted-foreground mt-0 h-5 mb-6"
                     aria-live="polite"
                 >
                     {timePoints.length > 0 && formatTimePointForDisplay(currentTimePoint)}
                 </div>
 
-                {/* Slider container  */}
-                <div className="px-2 mb-6 mx-2"> {/* Increased bottom margin for space */}
+                {/* Slider container */}
+                <div className="px-2 mb-1 mx-2">
                     <Slider
                         value={[currentTimeIndex]}
                         min={0}
@@ -90,17 +90,32 @@ const TimeControls: React.FC<TimeControlsProps> = ({
                         className={cn("w-full data-[disabled]:opacity-50 data-[disabled]:cursor-not-allowed")}
                         aria-valuetext={`Time point: ${formatTimePointForDisplay(currentTimePoint)}`}
                         aria-label="Time Point Slider"
-                        aria-controls="time-display-below-slider"
+                        aria-controls="time-display-above-slider"
                     />
                 </div>
 
-                {/* Main controls container for Selector, Date Display, and Play Button */}
-                {/* This container will handle stacking on mobile and row layout on desktop */}
-                <div className="flex flex-col lg:flex-row lg:justify-around lg:items-center gap-4 px-2">
+                {/* Container for Play Button, HeatmapSelector, and secondary Date Display. */}
+                <div className="flex flex-col md:flex-row md:justify-center md:items-center gap-4 px-2 mt-3">
 
-                    {/* Heatmap Selector */}
+                    {/* Play Button - Order 1 on mobile (directly under slider), Order 2 on desktop */}
+                    <div className="w-full md:w-auto flex justify-center order-1 md:order-2">
+                        <Button
+                            variant={playing && !playPauseButtonDisabled ? 'destructive' : 'default'}
+                            onClick={togglePlay}
+                            disabled={playPauseButtonDisabled}
+                            className={cn(
+                                "transition-colors duration-150 ease-in-out shadow-sm px-6",
+                            )}
+                            aria-pressed={playing}
+                            aria-label={playing ? "Pause animation" : "Play animation"}
+                        >
+                            {playing ? 'Pause' : 'Play Animation'}
+                        </Button>
+                    </div>
+
+                    {/* Heatmap Selector - Order 2 on mobile, Order 1 on desktop */}
                     {variables.length > 0 && !isLoading && (
-                        <div className="w-full lg:w-auto flex justify-center">
+                        <div className="w-full md:w-auto flex justify-center order-2 md:order-1">
                             <HeatmapSelector
                                 variables={variables}
                                 selectedVar={selectedVar}
@@ -111,27 +126,11 @@ const TimeControls: React.FC<TimeControlsProps> = ({
                         </div>
                     )}
 
-                    {/* Play Button - Moved to be in the middle for desktop by source order */}
-                    <div className="flex justify-center w-full lg:w-auto">
-                        <Button
-                            variant={playing && !playPauseButtonDisabled ? 'destructive' : 'default'}
-                            onClick={togglePlay}
-                            disabled={playPauseButtonDisabled}
-                            className={cn(
-                                "transition-colors duration-150 ease-in-out shadow-sm",
-                            )}
-                            aria-pressed={playing}
-                            aria-label={playing ? "Pause animation" : "Play animation"}
-                        >
-                            {playing ? 'Pause' : 'Play Animation'}
-                        </Button>
-                    </div>
-
-                    {/* Date Display */}
+                    {/* Date Display (secondary with index/total) - Order 3 on mobile and desktop */}
                     <div
                         className={cn(
-                            "text-sm font-medium text-foreground bg-muted py-1.5 px-3 rounded-md shadow-inner whitespace-nowrap text-center",
-                            "w-full lg:w-auto min-w-[160px]",
+                            "text-sm font-medium text-foreground bg-muted py-1.5 px-3 rounded-md shadow-inner whitespace-nowrap text-center order-3 md:order-3",
+                            "w-full md:w-auto min-w-[160px]",
                             "hidden sm:block"
                         )}
                         aria-live="polite"

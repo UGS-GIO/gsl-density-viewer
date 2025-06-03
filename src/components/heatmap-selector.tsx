@@ -6,7 +6,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import { VariableKey } from '@/lib/loaders';
 import { VariableConfig } from '@/components/map/heatmap-renderer';
 
@@ -28,7 +27,7 @@ const HeatmapSelector: React.FC<HeatmapSelectorProps> = ({
     const isDisabled = isLoading || !variables || variables.length <= 1;
 
     return (
-        <div className="mb-4 flex items-center justify-center gap-x-2 sm:gap-x-3">
+        <div className="flex items-center justify-center gap-x-2 sm:gap-x-3">
             <Select
                 value={selectedVar}
                 onValueChange={(value: string) => {

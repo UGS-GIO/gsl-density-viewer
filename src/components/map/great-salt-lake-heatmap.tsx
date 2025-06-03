@@ -32,7 +32,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
     const playTimerRef = useRef<number | null>(null);
     const ANIMATION_INTERVAL = 500;
 
-    const VARIABLE_CONFIGS = useMemo((): Record<string, VariableConfig> => ({ /* ...your full config... */
+    const VARIABLE_CONFIGS = useMemo((): Record<string, VariableConfig> => ({
         density: {
             key: 'density',
             label: 'Density (Lab)',
@@ -99,11 +99,6 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         return heatmapVars.length > 0 ? heatmapVars : ['density'];
     }, [allData, VARIABLE_CONFIGS]);
 
-    // Effect to set the initial time index once data is available
-    useEffect(() => {
-        if (timePoints.length > 0 && currentTimeIndex === 0)
-            setCurrentTimeIndex(timePoints.length - 1);
-    }, [timePoints, currentTimeIndex]);
     useEffect(() => {
         if (availableVariables.length > 0 && !availableVariables.includes(selectedVariable))
             setSelectedVariable(availableVariables[0]);
@@ -117,8 +112,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                 setCurrentTimeIndex((prevIndex) => {
                     const nextIndex = prevIndex + 1;
                     if (nextIndex >= timePoints.length) {
-                        setPlaying(false);
-                        return timePoints.length > 0 ? timePoints.length - 1 : 0;
+                        return 0; // Loop back to the beginning
                     }
                     return nextIndex;
                 });
@@ -231,15 +225,12 @@ const GreatSaltLakeHeatmap: React.FC = () => {
             zoom: INITIAL_ZOOM,
         });
 
-        mapRef.current.scrollZoom.disable();
-
         mapRef.current.on('load', () => {
             setMapLoaded(true);
             console.log("MapLibre map loaded and ready.");
         });
 
         mapRef.current.addControl(new maplibregl.NavigationControl(), 'top-right');
-        // mapRef.current.addControl(new maplibregl.FullscreenControl()); // Optional
 
         return () => {
             mapRef.current?.remove();
