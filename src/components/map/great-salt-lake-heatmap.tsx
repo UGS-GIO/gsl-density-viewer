@@ -1,23 +1,20 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'; // Removed Dispatch, SetStateAction as they are not explicitly used for props
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FeatureCollection, Geometry } from 'geojson';
-import HeatmapRenderer, { VariableConfig } from '@/components/map/heatmap-renderer';
+import maplibregl, { Map } from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import HeatmapRenderer, { LakeDataProps, VariableConfig } from '@/components/map/heatmap-renderer';
 import TimeControls from '@/components/ui/time-controls';
 import * as d3 from 'd3';
 import { AllLoadedData, ProcessedStation, SiteDataResult, VariableKey, loadGeoJsonData, loadSiteAndTempData } from '@/lib/loaders/';
 import { createSimpleGeoJSON, calculateAverageDensity } from '@/lib/utils';
 import Legend from '@/components/map/legend';
 
-export type LakeFeatureProperties = {
-    name?: string;
-    [key: string]: any;
-} | null;
 
+export type LakeFeatureProperties = { name?: string;[key: string]: any; } | null;
 export type StationDataValues = Record<string, number | undefined>;
 type DataRanges = Record<string, [number, number]>;
-
 interface GeoJsonResult {
-    data: FeatureCollection<Geometry, LakeFeatureProperties> | null;
+    data: LakeDataProps | null;
     error: string | null;
 }
 
@@ -26,62 +23,75 @@ interface GeoJsonResult {
  * Orchestrates data loading with React Query and renders UI sub-components.
  */
 const GreatSaltLakeHeatmap: React.FC = () => {
+    const mapContainerRef = useRef<HTMLDivElement | null>(null);
+    const mapRef = useRef<Map | null>(null);
+    const [mapLoaded, setMapLoaded] = useState(false);
     const [currentTimeIndex, setCurrentTimeIndex] = useState<number>(0);
     const [selectedVariable, setSelectedVariable] = useState<VariableKey>('density');
     const [playing, setPlaying] = useState<boolean>(false);
-
     const playTimerRef = useRef<number | null>(null);
     const ANIMATION_INTERVAL = 500;
 
-    const VARIABLE_CONFIGS = useMemo((): Record<string, VariableConfig> => ({
+    const VARIABLE_CONFIGS = useMemo((): Record<string, VariableConfig> => ({ /* ...your full config... */
         density: {
-            key: 'density', label: 'Density (Lab)', unit: 'g/cm³', precision: 3,
-            interpolate: 'interpolateBlues', defaultRange: [1.0, 1.25]
+            key: 'density',
+            label: 'Density (Lab)',
+            unit: 'g/cm³',
+            precision: 3,
+            interpolate: 'interpolateBlues',
+            defaultRange: [1.0, 1.25]
         },
         salinity: {
-            key: 'salinity', label: 'Salinity (EOS)', unit: 'g/L', precision: 1,
-            interpolate: 'interpolateGreens', defaultRange: [50, 250]
+            key: 'salinity',
+            label: 'Salinity (EOS)',
+            unit: 'g/L',
+            precision: 1,
+            interpolate: 'interpolateGreens',
+            defaultRange: [50, 250]
         },
         temperature: {
-            key: 'temperature', label: 'Avg Temp', unit: '°F', precision: 1,
-            interpolate: 'interpolateOrRd', defaultRange: [0, 100]
+            key: 'temperature',
+            label: 'Avg Temp',
+            unit: '°F',
+            precision: 1,
+            interpolate: 'interpolateOrRd',
+            defaultRange: [0, 100]
         }
     }), []);
 
-
     // Fetch GeoJSON data with explicit types
-    const { data: geoJsonResult, error: geoJsonError } = useQuery<GeoJsonResult, Error>({
+    const { data: geoJsonQueryResult, error: geoJsonQueryError } = useQuery<GeoJsonResult, Error>({
         queryKey: ['geoJsonData'],
         queryFn: loadGeoJsonData,
         staleTime: Infinity,
     });
 
     // Fetch site and temperature data with explicit types
-    const { data: siteDataResult, error: siteDataError, isLoading: isSiteDataLoading } = useQuery<SiteDataResult, Error>({
+    const { data: siteDataQueryResult, error: siteDataQueryError, isLoading: isSiteDataLoading } = useQuery<SiteDataResult, Error>({
         queryKey: ['siteAndTempData'],
         queryFn: loadSiteAndTempData,
         retry: 3,
     });
 
-
-    // Lake and site data are memoized to prevent unnecessary re-renders
-    const lakeData: FeatureCollection<Geometry, LakeFeatureProperties> | null = useMemo(() => {
-        if (geoJsonError) {
-            console.error("Error loading GeoJSON data:", geoJsonError);
-            return null;
+    const lakeData = useMemo((): LakeDataProps => {
+        if (geoJsonQueryError || geoJsonQueryResult?.error || !geoJsonQueryResult?.data) {
+            if (geoJsonQueryError) console.error("[DEBUG] GeoJSON query hook error:", geoJsonQueryError.message);
+            if (geoJsonQueryResult?.error) console.error("[DEBUG] GeoJSON application error from loadGeoJsonData:", geoJsonQueryResult.error);
+            if (!geoJsonQueryResult?.data && !geoJsonQueryError && !geoJsonQueryResult?.error) console.warn("[DEBUG] GeoJSON data from query is null/undefined, using fallback.");
+            return createSimpleGeoJSON();
         }
-        return geoJsonResult?.data || createSimpleGeoJSON();
-    }, [geoJsonResult, geoJsonError]);
+        return geoJsonQueryResult.data;
+    }, [geoJsonQueryResult, geoJsonQueryError]);
 
-    const usingMockData: boolean = useMemo(() => siteDataResult?.usingMockData || false, [siteDataResult]);
+    const usingMockData: boolean = useMemo(() => siteDataQueryResult?.usingMockData || false, [siteDataQueryResult]);
 
     // Derived states from siteDataResult to prevent re-renders
     const { stations, timePoints, allData, dataRanges } = useMemo(() => ({
-        stations: siteDataResult?.stations || [] as ProcessedStation[],
-        timePoints: siteDataResult?.timePoints || [] as string[],
-        allData: siteDataResult?.allData || {} as AllLoadedData,
-        dataRanges: siteDataResult?.dataRanges || {} as DataRanges,
-    }), [siteDataResult]);
+        stations: siteDataQueryResult?.stations || [] as ProcessedStation[],
+        timePoints: siteDataQueryResult?.timePoints || [] as string[],
+        allData: siteDataQueryResult?.allData || {} as AllLoadedData,
+        dataRanges: siteDataQueryResult?.dataRanges || {} as DataRanges,
+    }), [siteDataQueryResult]);
 
     const availableVariables: VariableKey[] = useMemo(() => {
         const heatmapVars = Object.keys(allData)
@@ -91,15 +101,12 @@ const GreatSaltLakeHeatmap: React.FC = () => {
 
     // Effect to set the initial time index once data is available
     useEffect(() => {
-        if (timePoints.length > 0 && currentTimeIndex === 0) {
+        if (timePoints.length > 0 && currentTimeIndex === 0)
             setCurrentTimeIndex(timePoints.length - 1);
-        }
     }, [timePoints, currentTimeIndex]);
-
     useEffect(() => {
-        if (availableVariables.length > 0 && !availableVariables.includes(selectedVariable)) {
+        if (availableVariables.length > 0 && !availableVariables.includes(selectedVariable))
             setSelectedVariable(availableVariables[0]);
-        }
     }, [availableVariables, selectedVariable]);
 
 
@@ -139,25 +146,22 @@ const GreatSaltLakeHeatmap: React.FC = () => {
     }, [allData, selectedVariable, currentTimePoint]);
 
     // Determine the current configuration based on the selected variable
-    const currentConfig: VariableConfig = useMemo(() => {
-        return VARIABLE_CONFIGS[selectedVariable] || {
+    const currentConfig: VariableConfig = useMemo(() =>
+        VARIABLE_CONFIGS[selectedVariable] || ({
             key: selectedVariable, label: selectedVariable.toUpperCase(), unit: '', precision: 2,
             interpolate: 'interpolateBlues', defaultRange: [0, 1]
-        } as VariableConfig;
-    }, [selectedVariable, VARIABLE_CONFIGS]);
-
-    // Calculate the current data range based on the selected variable
-    const currentRange: [number, number] = useMemo(() => {
-        return dataRanges[selectedVariable] || currentConfig.defaultRange;
-    }, [dataRanges, selectedVariable, currentConfig.defaultRange]);
+        }),
+        [selectedVariable, VARIABLE_CONFIGS]);
+    const currentRange: [number, number] = useMemo(() =>
+        dataRanges[selectedVariable] || currentConfig?.defaultRange || [0, 1],
+        [dataRanges, selectedVariable, currentConfig]
+    );
 
     // Calculate the current temperature for the heatmap, if available
     const currentTemperature: number | undefined = useMemo(() => {
         const tempTimePointData = allData.temperature?.[currentTimePoint];
         return typeof tempTimePointData === 'number' ? tempTimePointData : undefined;
     }, [allData, currentTimePoint]);
-
-    // Calculate the average value for display, if applicable
     const avgValueForDisplay: number | undefined = useMemo(() => {
         if (currentConfig.key !== 'temperature' && currentDataForTimepoint && Object.keys(currentDataForTimepoint).length > 0) {
             const avg = calculateAverageDensity(currentDataForTimepoint as StationDataValues);
@@ -165,8 +169,6 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         }
         return undefined;
     }, [currentDataForTimepoint, currentConfig]);
-
-    // Create a color scale for the legend based on the current configuration and range
     const legendColorScale: d3.ScaleSequential<number, string> | null = useMemo(() => {
         if (!currentConfig?.interpolate || !currentRange) return null;
         const colorInterpolator = (d3 as any)[currentConfig.interpolate] || d3.interpolateBlues;
@@ -192,120 +194,155 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         }
     };
 
+    const agrcTileUrl = "https://discover.agrc.utah.gov/login/path/bottle-apple-crater-oberon/tiles/lite_basemap/{z}/{x}/{y}";
+
+    // Initialize MapLibre Map
+    useEffect(() => {
+        if (mapRef.current || !mapContainerRef.current) return; // Initialize map only once
+
+        const GSL_CENTER: [number, number] = [-112.6, 41.2]; // Lon, Lat for GSL
+        const INITIAL_ZOOM = 9;
+
+        mapRef.current = new maplibregl.Map({
+            container: mapContainerRef.current,
+            style: {
+                version: 8,
+                sources: {
+                    'agrc-raster-tiles': {
+                        'type': 'raster',
+                        'tiles': [agrcTileUrl],
+                        'tileSize': 256,
+                        'attribution': '<a href="https://gis.utah.gov/" target="_blank">UGRC</a>'
+                    }
+                },
+                layers: [
+                    {
+                        'id': 'agrc-basemap-layer',
+                        'type': 'raster',
+                        'source': 'agrc-raster-tiles',
+                        'minzoom': 0,
+                        'maxzoom': 22
+                    }
+                ]
+            }, center: GSL_CENTER,
+            zoom: INITIAL_ZOOM,
+        });
+
+        mapRef.current.scrollZoom.disable();
+
+        mapRef.current.on('load', () => {
+            setMapLoaded(true);
+            console.log("MapLibre map loaded and ready.");
+        });
+
+        mapRef.current.addControl(new maplibregl.NavigationControl(), 'top-right');
+        // mapRef.current.addControl(new maplibregl.FullscreenControl()); // Optional
+
+        return () => {
+            mapRef.current?.remove();
+            mapRef.current = null;
+            setMapLoaded(false);
+        };
+    }, []); // Empty dependency array
+
     const combinedError: string | null = useMemo(() => {
         const errors: string[] = [];
-        if (geoJsonError) errors.push(`Map outline: ${geoJsonError.message}`);
-        else if (geoJsonResult?.error) errors.push(`Map outline: ${geoJsonResult.error}`);
-
-        if (siteDataError) errors.push(`Site data: ${siteDataError.message}`);
-        else if (siteDataResult?.error) errors.push(`Site data: ${siteDataResult.error}`);
+        if (geoJsonQueryError) errors.push(`Map outline (query): ${geoJsonQueryError.message}`);
+        else if (geoJsonQueryResult?.error) errors.push(`Map outline (app): ${geoJsonQueryResult.error}`);
+        if (siteDataQueryError) errors.push(`Site data (query): ${siteDataQueryError.message}`);
+        else if (siteDataQueryResult?.error) errors.push(`Site data (app): ${siteDataQueryResult.error}`);
         return errors.length > 0 ? errors.join('. ') : null;
-    }, [geoJsonError, geoJsonResult, siteDataError, siteDataResult]);
-
+    }, [geoJsonQueryError, geoJsonQueryResult, siteDataQueryError, siteDataQueryResult]);
 
     return (
         <div className="flex h-screen w-screen flex-col bg-background text-foreground overflow-hidden">
-            {combinedError && (
-                <div className="mb-4 rounded border border-destructive/50 bg-destructive/10 p-3 text-center text-sm text-destructive" role="alert">
-                    <strong>Warning:</strong> {combinedError}
-                </div>
-            )}
-            {usingMockData && !combinedError && (
-                <div className="mb-4 rounded border border-primary/50 bg-primary/10 p-3 text-center text-sm text-primary" role="status">
-                    <strong>Note:</strong> Using simulated or incomplete data for demonstration.
+            {/* Error and Status Messages */}
+            <div className="absolute top-0 left-0 right-0 z-20 p-2">
+                {combinedError && (
+                    <div className="mb-2 rounded border border-destructive/50 bg-destructive/10 p-3 text-center text-sm text-destructive shadow-lg" role="alert">
+                        <strong>Warning:</strong> {combinedError}
+                    </div>
+                )}
+                {usingMockData && !combinedError && (
+                    <div className="mb-2 rounded border border-primary/50 bg-primary/10 p-3 text-center text-sm text-primary shadow-lg" role="status">
+                        <strong>Note:</strong> Using simulated or incomplete data for demonstration.
+                    </div>
+                )}
+            </div>
+
+            {/* Map Container */}
+            <div ref={mapContainerRef} className="absolute inset-0 h-full w-full" />
+
+            {/* Header and Legend as Overlays */}
+            {!isSiteDataLoading && (
+                <div className="absolute top-16 left-1/2 transform -translate-x-1/2 z-10 p-1 bg-card/70 backdrop-blur-sm rounded-md shadow-lg md:top-4 md:left-4 md:-translate-x-0">
+                    <header className="p-1 md:p-2 text-center">
+                        <h2 className="text-base font-semibold text-foreground sm:text-lg truncate">
+                            GSL {currentConfig.label} - {formatDateForTitle(currentTimePoint)}
+                        </h2>
+                        <p className="text-xs text-muted-foreground sm:text-sm truncate">
+                            Avg Temp: {currentTemperature !== undefined ? `${currentTemperature.toFixed(1)}°F` : 'N/A'}
+                            {currentConfig.key !== 'temperature' && avgValueForDisplay !== undefined && !isNaN(avgValueForDisplay) && (
+                                ` | Avg ${currentConfig.label}: ${avgValueForDisplay.toFixed(currentConfig.precision)} ${currentConfig.unit}`
+                            )}
+                        </p>
+                    </header>
+                    {legendColorScale && currentRange && (
+                        <div className="legend-wrapper flex justify-center w-full h-8 md:h-10 px-2 py-1">
+                            <svg viewBox="0 0 450 50" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
+                                <g transform="translate(5,5)">
+                                    <Legend width={420} barHeight={10} {...{ colorScale: legendColorScale, currentRange, currentConfig, tickCount: 3, marginTop: 15, marginLeft: 15, marginRight: 15, marginBottom: 25 }} />
+                                </g>
+                            </svg>
+                        </div>
+                    )}
                 </div>
             )}
 
-            <div className="relative flex-grow bg-muted/30 overflow-hidden">
-                {isSiteDataLoading && (
-                    <div className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-background/80 backdrop-blur-sm">
-                        <p className="text-xl text-primary animate-pulse">Loading data...</p>
-                    </div>
-                )}
-                {!isSiteDataLoading && lakeData && (
-                    <HeatmapRenderer
-                        lakeData={lakeData}
-                        stations={stations}
-                        currentDataForTimepoint={currentDataForTimepoint}
-                        currentTemperature={currentTemperature}
-                        currentRange={currentRange}
-                        currentConfig={currentConfig}
+            {/* HeatmapRenderer as an overlay, only when map and data are ready */}
+            {mapLoaded && mapRef.current && lakeData && stations && currentConfig && currentDataForTimepoint && !isSiteDataLoading && (
+                <HeatmapRenderer
+                    map={mapRef.current}
+                    lakeData={lakeData}
+                    stations={stations}
+                    currentDataForTimepoint={currentDataForTimepoint}
+                    currentTemperature={currentTemperature}
+                    currentRange={currentRange}
+                    currentConfig={currentConfig}
+                    currentTimePoint={currentTimePoint}
+                    isLoading={isSiteDataLoading} // Pass for completeness, though guarded by !isSiteDataLoading
+                />
+            )}
+
+            {/* TimeControls as an Overlay at the Bottom */}
+            <div className="absolute bottom-0 left-0 right-0 z-10 p-2 bg-card/70 backdrop-blur-sm border-t border-border shadow-lg">
+                {!isSiteDataLoading && timePoints.length > 0 && (
+                    <TimeControls
+                        variables={availableVariables}
+                        selectedVar={selectedVariable}
+                        onChange={setSelectedVariable}
+                        variableConfig={VARIABLE_CONFIGS}
+                        playing={playing}
+                        setPlaying={setPlaying}
+                        currentTimeIndex={currentTimeIndex}
+                        setCurrentTimeIndex={setCurrentTimeIndex}
+                        timePoints={timePoints}
                         currentTimePoint={currentTimePoint}
                         isLoading={isSiteDataLoading}
                     />
                 )}
-            </div>
-
-            {/* Header and Legend Section */}
-            <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-3 flex-shrink-0 mx-2 sm:mx-4 my-2">
-                <header className="shrink-0 p-2 text-center bg-card shadow-sm md:w-auto">
-                    {isSiteDataLoading ? (
-                        <h2 className="text-lg font-semibold text-primary sm:text-xl">Loading Map Data...</h2>
-                    ) : (
-                        <>
-                            <h2 className="text-lg font-semibold text-foreground sm:text-xl truncate">
-                                Great Salt Lake {currentConfig.label} - {formatDateForTitle(currentTimePoint)}
-                            </h2>
-                            <p className="text-xs text-muted-foreground sm:text-sm truncate">
-                                Avg Temp: {currentTemperature !== undefined ? `${currentTemperature.toFixed(1)}°F` : 'N/A'}
-                                {currentConfig.key !== 'temperature' && avgValueForDisplay !== undefined && !isNaN(avgValueForDisplay) && (
-                                    ` | Avg ${currentConfig.label}: ${avgValueForDisplay.toFixed(currentConfig.precision)} ${currentConfig.unit}`
-                                )}
-                            </p>
-                        </>
-                    )}
-                </header>
-
-                {!isSiteDataLoading && legendColorScale && currentRange && (
-                    <div className="legend-wrapper flex justify-center md:justify-end w-full md:w-auto h-10 md:h-[50px]">
-                        <svg
-                            viewBox="0 0 450 50" // Defines intrinsic coordinate system & aspect ratio
-                            aria-label="Data legend"
-                            // Fills the parent wrapper. 'meet' ensures it fits & maintains aspect ratio.
-                            className="w-full h-full"
-                            preserveAspectRatio="xMidYMid meet"
-                        >
-                            <g transform="translate(5, 5)">
-                                <Legend
-                                    colorScale={legendColorScale}
-                                    currentRange={currentRange}
-                                    currentConfig={{ label: currentConfig.label, unit: currentConfig.unit }}
-                                    width={420}
-                                    barHeight={10}
-                                    tickCount={3}
-                                    marginTop={15}
-                                    marginLeft={15}
-                                    marginRight={15}
-                                    marginBottom={25}
-                                />
-                            </g>
-                        </svg>
-                    </div>
+                {!isSiteDataLoading && timePoints.length === 0 && (
+                    <p className="text-sm text-muted-foreground p-2 text-center">Time data unavailable.</p>
                 )}
             </div>
 
-            {/* Bottom Control Bar */}
-            <div className="flex flex-col sm:flex-row items-center sm:items-end justify-between gap-y-3 gap-x-4 border-t border-border bg-card shadow-sm">
-                <div className="w-full order-last sm:order-2 sm:flex-grow sm:basis-0 min-w-0 flex justify-center px-0 sm:px-2 md:px-4">
-                    {!isSiteDataLoading && timePoints.length > 0 && (
-                        <TimeControls
-                            variables={availableVariables}
-                            selectedVar={selectedVariable}
-                            onChange={setSelectedVariable}
-                            variableConfig={VARIABLE_CONFIGS}
-                            playing={playing}
-                            setPlaying={setPlaying}
-                            currentTimeIndex={currentTimeIndex}
-                            setCurrentTimeIndex={setCurrentTimeIndex}
-                            timePoints={timePoints}
-                            currentTimePoint={currentTimePoint}
-                            isLoading={isSiteDataLoading}
-                        />
-                    )}
+            {/* Loading overlay for initial site data load, if not map specific */}
+            {isSiteDataLoading && !mapLoaded && ( // Show general loading if map isn't even up yet
+                <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+                    <p className="text-xl text-primary animate-pulse">Loading data...</p>
                 </div>
-            </div>
+            )}
         </div>
     );
 };
-
 export default GreatSaltLakeHeatmap;

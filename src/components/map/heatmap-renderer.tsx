@@ -1,33 +1,28 @@
-import React, { useRef, useMemo, useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useRef, useMemo } from 'react';
 import * as d3 from 'd3';
-import { FeatureCollection, Geometry, Feature } from 'geojson';
-import { calculateAverageDensity } from '@/lib/utils';
-import { LakeFeatureProperties } from './great-salt-lake-heatmap';
+import { FeatureCollection, Geometry } from 'geojson';
+import { Map as MapLibreMap, LngLat } from 'maplibre-gl';
 import { ProcessedStation } from '@/lib/loaders';
-import Legend from '@/components/map/legend';
-
-// --- Constants ---
-const SVG_VIEWBOX_WIDTH = 800;
-const SVG_VIEWBOX_HEIGHT = 500;
-const SVG_PROJECTION_PADDING = 20; // Padding inside the SVG for map projection fitting
+import { StationDataValues } from '@/components/map/great-salt-lake-heatmap';
 
 // --- Type Definitions ---
-// Configuration for a displayable variable (density, salinity, etc.)
 export interface VariableConfig {
     key: string;
     label: string;
     unit: string;
     precision: number;
-    interpolate: string; // Name of a D3 interpolator function (e.g., "interpolateBlues")
+    interpolate: string;
     defaultRange: [number, number];
 }
+interface LakeFeatureProperties { name?: string;[key: string]: any; }
+export type LakeDataProps = FeatureCollection<Geometry, LakeFeatureProperties>;
 
-// Data for the currently selected variable at a specific timepoint, keyed by station ID
-type StationDataValues = Record<string, number | undefined>;
+const HEATMAP_RESOLUTION_WIDTH = 600;
+const HEATMAP_RESOLUTION_HEIGHT = 375;
 
-// Props for the HeatmapRenderer component
 interface HeatmapRendererProps {
-    lakeData: FeatureCollection<Geometry, LakeFeatureProperties> | null;
+    map: MapLibreMap;
+    lakeData: LakeDataProps;
     stations: ProcessedStation[];
     currentDataForTimepoint: StationDataValues;
     currentTemperature?: number;
@@ -35,13 +30,8 @@ interface HeatmapRendererProps {
     currentConfig: VariableConfig;
     currentTimePoint: string;
     isLoading: boolean;
-    // Optional: Configuration for arm identification could be passed as props
-    // northArmFeatureNameIncludes?: string; // e.g., "north"
-    // southArmFeatureNameIncludes?: string; // e.g., "south"
-    // northArmStationIds?: ReadonlySet<string>; // More robust than hardcoding
 }
 
-// Internal type for projected data points used in IDW
 interface DataPoint {
     x: number;
     y: number;
@@ -49,314 +39,287 @@ interface DataPoint {
 }
 
 /**
- * Renders a D3.js powered heatmap visualization for geographic data,
- * showing interpolated values based on station readings.
+ * Renders a heatmap overlay on a MapLibre map using D3.js.
+ * This component takes care of rendering the heatmap based on the provided lake data,
+ * station data, and current configuration.
  */
 const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
+    map,
     lakeData,
     stations,
     currentDataForTimepoint,
-    currentTemperature,
     currentRange,
     currentConfig,
     currentTimePoint,
-    isLoading,
+    // isLoading,
 }) => {
-    const svgRef = useRef<SVGSVGElement>(null);
+    const svgLayerRef = useRef<d3.Selection<SVGSVGElement, unknown, null, undefined> | null>(null);
+    const contentGroupRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null);
+    const imageLayerGroupRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null);
 
-    const projection = useMemo((): d3.GeoProjection | null => {
-        if (!lakeData || !lakeData.features || lakeData.features.length === 0) {
-            return null;
-        }
-        try {
-            return d3
-                .geoMercator()
-                .fitExtent(
-                    [
-                        [SVG_PROJECTION_PADDING, SVG_PROJECTION_PADDING],
-                        [
-                            SVG_VIEWBOX_WIDTH - SVG_PROJECTION_PADDING,
-                            SVG_VIEWBOX_HEIGHT - SVG_PROJECTION_PADDING,
-                        ],
-                    ],
-                    lakeData
-                );
-        } catch (error) {
-            console.error('HeatmapRenderer: Error creating map projection:', error);
-            return null;
-        }
-    }, [lakeData]);
+    const d3ProjectionStream = useMemo(() => {
+        return d3.geoTransform({
+            point: function (longitude, latitude) {
+                const point = map.project(new LngLat(longitude, latitude));
+                this.stream.point(point.x, point.y);
+            }
+        });
+    }, [map]);
+    const geoPathGenerator = useMemo(() => d3.geoPath().projection(d3ProjectionStream), [d3ProjectionStream]);
 
     const formatDateForTitle = useCallback((timePoint: string): string => {
         if (!timePoint) return '';
-        const [year, monthNumStr] = timePoint.split('-');
-        const monthIndex = parseInt(monthNumStr, 10) - 1;
-        const monthNames = [
-            'January', 'February', 'March', 'April', 'May', 'June', 'July',
-            'August', 'September', 'October', 'November', 'December',
-        ];
-        return `${monthNames[monthIndex] || `Month ${monthNumStr}`} - ${year}`;
+        try {
+            const [year, monthNumStr] = timePoint.split('-');
+            const monthIndex = parseInt(monthNumStr, 10) - 1;
+            if (isNaN(monthIndex) || monthIndex < 0 || monthIndex > 11) return year || timePoint;
+            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return `${monthNames[monthIndex]} ${year}`;
+        } catch { return timePoint; }
     }, []);
 
-    const renderHeatmap = useCallback(() => {
-        if (
-            !svgRef.current ||
-            !lakeData || !lakeData.features || lakeData.features.length === 0 ||
-            !projection ||
-            !stations ||
-            !currentConfig
-        ) {
+    const clipIdToSlug = useCallback((clipId: string | null): string => {
+        if (!clipId) return '';
+        return clipId.replace('maplibreo-lake-clip-', '');
+    }, []);
+
+    const renderOverlay = useCallback(() => {
+        if (!contentGroupRef.current || !imageLayerGroupRef.current || !lakeData || !lakeData.features || !currentConfig || !stations || !map.isStyleLoaded()) {
+            if (contentGroupRef.current) contentGroupRef.current.selectAll('*').remove();
+            if (imageLayerGroupRef.current) imageLayerGroupRef.current.selectAll('*').remove();
             return;
         }
 
-        const svg = d3.select(svgRef.current);
-        svg.selectAll('*').remove(); // Clear previous render
+        const gContent = contentGroupRef.current;
+        const gImages = imageLayerGroupRef.current;
 
-        const avgValue = calculateAverageDensity(currentDataForTimepoint);
+        gContent.selectAll('*').remove();
+        gImages.selectAll('*').remove();
 
-        const northCanvas = document.createElement('canvas');
-        northCanvas.width = SVG_VIEWBOX_WIDTH;
-        northCanvas.height = SVG_VIEWBOX_HEIGHT;
-        const northCtx = northCanvas.getContext('2d');
+        const mapCanvasEl = map.getCanvas();
+        const viewportWidth = mapCanvasEl.width;
+        const viewportHeight = mapCanvasEl.height;
 
-        const southCanvas = document.createElement('canvas');
-        southCanvas.width = SVG_VIEWBOX_WIDTH;
-        southCanvas.height = SVG_VIEWBOX_HEIGHT;
-        const southCtx = southCanvas.getContext('2d');
-
-        if (!northCtx || !southCtx) {
-            console.error("HeatmapRenderer: Could not get 2D context for offscreen canvases.");
-            return;
-        }
-
-        const geoPathGenerator = d3.geoPath().projection(projection);
-
+        const defs = gContent.append('defs');
         let northArmClipId: string | null = null;
         let southArmClipId: string | null = null;
-        const defs = svg.append('defs');
 
-        lakeData.features.forEach((feature: Feature<Geometry, LakeFeatureProperties>, index: number) => {
+        lakeData.features.forEach((feature, index) => {
             const rawName = feature.properties?.name || `feature-${index}`;
             const slug = rawName
                 .toLowerCase()
-                .replace(/\s+/g, '-') // Replace spaces with hyphens
-                .replace(/[^a-z0-9-]/g, '') // Remove non-alphanumeric (except hyphens)
-                .replace(/^-+|-+$/g, '') // Trim leading/trailing hyphens
-                .replace(/-+/g, '-'); // Consolidate multiple hyphens
-            const clipId = `lake-clip-${slug || index}`;
-
-            // TODO: Make arm identification more robust (e.g., via feature properties or configurable keywords)
+                .replace(/\s+/g, '-')
+                .replace(/[^a-z0-9-]/g, '')
+                .replace(/^-+|-+$/g, '')
+                .replace(/-+/g, '-');
+            const clipId = `maplibreo-lake-clip-${slug || index}`;
             if (slug.includes('north')) northArmClipId = clipId;
             else if (slug.includes('south')) southArmClipId = clipId;
-            // else console.warn(`HeatmapRenderer: Feature "${slug}" not identified as North or South arm.`);
-
-
             try {
-                defs
-                    .append('clipPath')
-                    .attr('id', clipId)
-                    .append('path')
-                    .datum(feature)
-                    .attr('d', geoPathGenerator as d3.GeoPath<any, Feature<Geometry, LakeFeatureProperties>>);
-            } catch (error) {
-                console.error(`HeatmapRenderer: Error creating clip path for "${slug}":`, error);
-                defs.append('clipPath').attr('id', clipId).append('rect').attr('width', 0).attr('height', 0); // Fallback
-            }
+                defs.append('clipPath').attr('id', clipId).append('path').datum(feature).attr('d', geoPathGenerator);
+            } catch (error) { console.error("Error creating D3 clip path for " + slug + ":", error); }
         });
 
-        if (!northArmClipId || !southArmClipId) {
-            console.warn('HeatmapRenderer: Could not identify clip paths for both North and South arms. Heatmap clipping may be incomplete.');
-        }
-
         const interpolatorName = currentConfig.interpolate || 'interpolateBlues';
-
         const colorInterpolator = (d3 as any)[interpolatorName] || d3.interpolateBlues;
         const colorScale = d3.scaleSequential(colorInterpolator).domain([currentRange[1], currentRange[0]]);
 
-        // TODO: Make NORTH_ARM_STATION_IDS configurable via props for flexibility
         const NORTH_ARM_STATION_IDS: ReadonlySet<string> = new Set(['RD2', 'SJ-1', 'RD1', 'LVG4']);
-        const northDataPoints: DataPoint[] = [];
-        const southDataPoints: DataPoint[] = [];
-
+        const northScreenPoints: DataPoint[] = [];
+        const southScreenPoints: DataPoint[] = [];
         stations.forEach((station) => {
             const value = currentDataForTimepoint[station.id];
-            if (
-                value !== undefined && typeof value === 'number' && !isNaN(value) &&
+            if (value !== undefined && typeof value === 'number' && !isNaN(value) &&
                 typeof station.longitude === 'number' && !isNaN(station.longitude) &&
-                typeof station.latitude === 'number' && !isNaN(station.latitude)
-            ) {
+                typeof station.latitude === 'number' && !isNaN(station.latitude)) {
                 try {
-                    const projected = projection([station.longitude, station.latitude]);
-                    if (projected && typeof projected[0] === 'number' && typeof projected[1] === 'number') {
-                        const point: DataPoint = { x: projected[0], y: projected[1], value };
-                        if (NORTH_ARM_STATION_IDS.has(station.id)) {
-                            northDataPoints.push(point);
-                        } else {
-                            southDataPoints.push(point);
-                        }
+                    const projected = map.project(new LngLat(station.longitude, station.latitude));
+                    if (projected) {
+                        const point: DataPoint = { x: projected.x, y: projected.y, value };
+                        if (NORTH_ARM_STATION_IDS.has(station.id)) northScreenPoints.push(point);
+                        else southScreenPoints.push(point);
                     }
-                } catch (error) { /* Silently ignore projection errors for individual points */ }
+                } catch (e) { /* ignore */ }
             }
         });
 
         const IDW_POWER = 2;
         const CELL_SIZE = 5;
-        const gridCols = Math.ceil(SVG_VIEWBOX_WIDTH / CELL_SIZE);
-        const gridRows = Math.ceil(SVG_VIEWBOX_HEIGHT / CELL_SIZE);
-        let northCellsDrawn = 0;
-        let southCellsDrawn = 0;
-
-        const idw = (x: number, y: number, points: DataPoint[], power: number = IDW_POWER): number | null => {
-            let numerator = 0;
-            let denominator = 0;
-            let exactMatchValue: number | null = null;
-            for (const point of points) {
-                const distanceSq = Math.pow(x - point.x, 2) + Math.pow(y - point.y, 2);
-                if (distanceSq < 1e-8) {
-                    exactMatchValue = point.value;
-                    break;
-                }
-                if (distanceSq === 0) continue;
-                const weight = 1 / Math.pow(distanceSq, power / 2);
-                numerator += point.value * weight;
-                denominator += weight;
+        const idw = (x: number, y: number, points: DataPoint[], pwr: number = IDW_POWER): number | null => {
+            let num = 0, den = 0; let match = null;
+            for (const pt of points) {
+                const dSq = (x - pt.x) ** 2 + (y - pt.y) ** 2;
+                if (dSq < 1e-8) { match = pt.value; break; }
+                if (dSq === 0) continue;
+                const w = 1 / Math.pow(dSq, pwr / 2);
+                if (!isFinite(w)) continue;
+                num += pt.value * w;
+                den += w;
             }
-            if (exactMatchValue !== null) return exactMatchValue;
-            return denominator === 0 || !isFinite(denominator) ? null : numerator / denominator;
+            if (match !== null) return match;
+            return den === 0 || !isFinite(den) ? null : num / den;
         };
 
-        if (northDataPoints.length > 0 || southDataPoints.length > 0) {
-            for (let col = 0; col < gridCols; col++) {
-                for (let row = 0; row < gridRows; row++) {
-                    const cellCenterX = col * CELL_SIZE + CELL_SIZE / 2;
-                    const cellCenterY = row * CELL_SIZE + CELL_SIZE / 2;
+        const processArm = (armPoints: DataPoint[], armClipId: string | null, canvasResolutionWidth: number, canvasResolutionHeight: number) => {
+            if (!armClipId) return;
+            if (armPoints.length === 0 && stations.length > 0) return;
 
-                    if (northDataPoints.length > 0) {
-                        const interpolatedNorth = idw(cellCenterX, cellCenterY, northDataPoints);
-                        if (interpolatedNorth !== null && isFinite(interpolatedNorth)) {
+            const offscreenCanvas = document.createElement('canvas');
+            offscreenCanvas.width = canvasResolutionWidth;
+            offscreenCanvas.height = canvasResolutionHeight;
+            const ctx = offscreenCanvas.getContext('2d');
+            if (!ctx) return;
 
+            let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+            const currentArmSlug = clipIdToSlug(armClipId);
+            const armFeature = lakeData.features.find(f => {
+                const rawName = f.properties?.name || '';
+                const slug = rawName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/^-+|-+$/g, '').replace(/-+/g, '-');
+                return slug === currentArmSlug;
+            });
 
-                            northCtx.fillStyle = colorScale(interpolatedNorth).toString();
-                            northCtx.fillRect(col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-                            northCellsDrawn++;
-                        }
-                    }
+            if (armFeature) {
+                const bounds = d3.geoBounds(armFeature);
+                minLng = bounds[0][0]; minLat = bounds[0][1];
+                maxLng = bounds[1][0]; maxLat = bounds[1][1];
+            } else {
+                console.warn(`[DEBUG] HeatmapRenderer: GeoJSON feature for arm '${currentArmSlug}' not found. Cannot determine heatmap extent.`);
+                return;
+            }
 
-                    if (southDataPoints.length > 0) {
-                        const interpolatedSouth = idw(cellCenterX, cellCenterY, southDataPoints);
-                        if (interpolatedSouth !== null && isFinite(interpolatedSouth)) {
-                            southCtx.fillStyle = colorScale(interpolatedSouth).toString();
+            if (!isFinite(minLng) || !isFinite(minLat) || !isFinite(maxLng) || !isFinite(maxLat)) {
+                console.warn(`[DEBUG] Invalid geographic bounds for ${currentArmSlug}.`);
+                return;
+            }
 
-                            southCtx.fillRect(col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-                            southCellsDrawn++;
-                        }
+            const topLeft = map.project(new LngLat(minLng, maxLat));
+            const bottomRight = map.project(new LngLat(maxLng, minLat));
+            const imgScreenX = Math.min(topLeft.x, bottomRight.x);
+            const imgScreenY = Math.min(topLeft.y, bottomRight.y);
+            const imgScreenWidth = Math.abs(bottomRight.x - topLeft.x);
+            const imgScreenHeight = Math.abs(bottomRight.y - topLeft.y);
+
+            if (imgScreenWidth <= 0 || imgScreenHeight <= 0) return;
+
+            const gridCols = Math.ceil(canvasResolutionWidth / CELL_SIZE);
+            const gridRows = Math.ceil(canvasResolutionHeight / CELL_SIZE);
+
+            for (let c = 0; c < gridCols; c++) {
+                for (let r = 0; r < gridRows; r++) {
+                    const canvasPxX = (c + 0.5) * CELL_SIZE;
+                    const canvasPxY = (r + 0.5) * CELL_SIZE;
+                    const screenX = imgScreenX + (canvasPxX / canvasResolutionWidth) * imgScreenWidth;
+                    const screenY = imgScreenY + (canvasPxY / canvasResolutionHeight) * imgScreenHeight;
+
+                    const interpolatedVal = idw(screenX, screenY, armPoints);
+                    if (interpolatedVal !== null && isFinite(interpolatedVal)) {
+                        ctx.fillStyle = colorScale(interpolatedVal).toString();
+                        ctx.fillRect(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE);
                     }
                 }
             }
-        }
 
-        if (northCellsDrawn > 0 && northArmClipId) {
-            svg.append('image')
-                .attr('x', 0).attr('y', 0)
-                .attr('width', SVG_VIEWBOX_WIDTH).attr('height', SVG_VIEWBOX_HEIGHT)
+            gImages.append('image')
+                .attr('x', imgScreenX)
+                .attr('y', imgScreenY)
+                .attr('width', imgScreenWidth)
+                .attr('height', imgScreenHeight)
                 .attr('preserveAspectRatio', 'none')
-                .attr('clip-path', `url(#${northArmClipId})`)
-                .attr('href', northCanvas.toDataURL());
-        }
+                .attr('clip-path', `url(#${armClipId})`)
+                .attr('href', offscreenCanvas.toDataURL());
+        };
 
-        if (southCellsDrawn > 0 && southArmClipId) {
-            svg.append('image')
-                .attr('x', 0).attr('y', 0)
-                .attr('width', SVG_VIEWBOX_WIDTH).attr('height', SVG_VIEWBOX_HEIGHT)
-                .attr('preserveAspectRatio', 'none')
-                .attr('clip-path', `url(#${southArmClipId})`)
-                .attr('href', southCanvas.toDataURL());
-        }
+        processArm(northScreenPoints, northArmClipId, HEATMAP_RESOLUTION_WIDTH, HEATMAP_RESOLUTION_HEIGHT);
+        processArm(southScreenPoints, southArmClipId, HEATMAP_RESOLUTION_WIDTH, HEATMAP_RESOLUTION_HEIGHT);
 
-        if (northCellsDrawn === 0 && southCellsDrawn === 0) {
-            svg.append('text')
-                .attr('x', SVG_VIEWBOX_WIDTH / 2).attr('y', SVG_VIEWBOX_HEIGHT / 2)
-                .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
-                .attr('fill', '#777')
-                .style('font-size', '14px')
-                .text(`No ${currentConfig.label || 'data'} for heatmap for ${formatDateForTitle(currentTimePoint)}`);
-        }
-
-        svg.append('g')
+        gContent.append('g')
             .attr('class', 'lake-outlines')
             .selectAll('path')
             .data(lakeData.features)
             .join('path')
-            .attr('d', geoPathGenerator as d3.GeoPath<any, Feature<Geometry, LakeFeatureProperties>>)
+            .attr('d', geoPathGenerator)
             .attr('fill', 'none')
-            .attr('stroke', '#5c97b9')
+            .attr('stroke', 'hsl(var(--primary))')
             .attr('stroke-width', 1.5)
             .attr('vector-effect', 'non-scaling-stroke');
 
-        // TODO: Station label positioning could be externalized or made more configurable
-        const stationLabelOffsets: Record<string, { x: number; y: number }> = {
-            'SJ-1': { x: -2, y: 18 },
-            'RD1': { x: 8, y: -10 },
-        };
-        const DEFAULT_STATION_LABEL_OFFSET = { x: 0, y: 15 };
-        const stationGroup = svg.append('g').attr('class', 'stations');
-
+        const stationGroup = gContent.append('g').attr('class', 'stations');
         stations.forEach((station) => {
-            if (typeof station.longitude !== 'number' || isNaN(station.longitude) ||
-                typeof station.latitude !== 'number' || isNaN(station.latitude)) return;
-            try {
-                const projected = projection([station.longitude, station.latitude]);
-                if (!projected || isNaN(projected[0]) || isNaN(projected[1])) return;
-
-                const [x, y] = projected;
-                const value = currentDataForTimepoint[station.id];
-                const hasData = value !== undefined && typeof value === 'number' && !isNaN(value);
-                const fillColor = hasData ? colorScale(value) : 'hsl(var(--muted))';
-
-                const g = stationGroup.append('g').attr('transform', `translate(${x}, ${y})`);
-                g.append('circle').attr('r', 5)
-                    .attr('fill', fillColor)
-                    .attr('stroke', 'black')
-                    .attr('stroke-width', 1.25);
-                g.append('title').text(hasData ? `${station.name}: ${value.toFixed(currentConfig.precision)} ${currentConfig.unit}` : `${station.name}: No data`);
-
-                const offset = stationLabelOffsets[station.id] || DEFAULT_STATION_LABEL_OFFSET;
-                g.append('text').attr('x', offset.x).attr('y', offset.y)
-                    .attr('text-anchor', 'middle')
-                    .attr('class', 'fill-foreground')
-                    .style('font-size', '10px')
-                    .text(station.name);
-            } catch (error) { /* Silently ignore errors for individual station drawing */ }
+            if (typeof station.longitude === 'number' && typeof station.latitude === 'number') {
+                const projected = map.project(new LngLat(station.longitude, station.latitude));
+                if (projected) {
+                    const value = currentDataForTimepoint[station.id];
+                    const hasData = value !== undefined && typeof value === 'number' && !isNaN(value);
+                    const fillColor = hasData ? colorScale(value) : 'hsl(var(--muted))';
+                    const stationEl = stationGroup.append('g').attr('transform', `translate(${projected.x},${projected.y})`);
+                    stationEl.append('circle').attr('r', 5).attr('fill', fillColor).attr('stroke', 'black').attr('stroke-width', 1.5);
+                    stationEl.append('title').text(hasData ? `${station.name}: ${value.toFixed(currentConfig.precision)} ${currentConfig.unit}` : `${station.name}: No data`);
+                    const stationLabelOffsets: Record<string, { x: number; y: number }> = { 'SJ-1': { x: -2, y: 18 }, 'RD1': { x: 8, y: -10 } };
+                    const DEFAULT_STATION_LABEL_OFFSET = { x: 0, y: 15 };
+                    const offset = stationLabelOffsets[station.id] || DEFAULT_STATION_LABEL_OFFSET;
+                    stationEl.append('text').attr('x', offset.x).attr('y', offset.y)
+                        .attr('text-anchor', 'middle').attr('fill', 'hsl(var(--foreground))')
+                        .style('font-size', '10px').style('paint-order', 'stroke').style('stroke', 'hsl(var(--background))').style('stroke-width', '2.5px')
+                        .text(station.name);
+                }
+            }
         });
 
-    }, [
-        lakeData, stations, projection, currentTimePoint, currentDataForTimepoint,
-        currentTemperature, currentRange, currentConfig, isLoading,
-        formatDateForTitle, calculateAverageDensity,
-    ]);
+        if (northScreenPoints.length === 0 && southScreenPoints.length === 0 && stations.length > 0 && Object.keys(currentDataForTimepoint).length > 0) {
+            gContent.append('text')
+                .attr('x', viewportWidth / 2).attr('y', viewportHeight / 2)
+                .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+                .attr('fill', 'hsl(var(--muted-foreground))').style('font-size', '14px')
+                .text(`No station data for ${currentConfig.label} at ${formatDateForTitle(currentTimePoint)} to generate heatmap.`);
+        } else if (stations.length === 0) {
+            gContent.append('text')
+                .attr('x', viewportWidth / 2).attr('y', viewportHeight / 2)
+                .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+                .attr('fill', 'hsl(var(--muted-foreground))').style('font-size', '14px')
+                .text(`No station locations available.`);
+        }
+
+    }, [map, lakeData, stations, currentDataForTimepoint, currentRange, currentConfig, geoPathGenerator, currentTimePoint, formatDateForTitle, clipIdToSlug]);
 
     useEffect(() => {
-        if (projection && !isLoading && lakeData && currentConfig && stations) {
-            const animationId = requestAnimationFrame(renderHeatmap);
-            return () => cancelAnimationFrame(animationId);
-        }
-    }, [projection, isLoading, lakeData, currentConfig, stations, renderHeatmap]);
+        if (!map || !map.getCanvasContainer() || svgLayerRef.current) return;
 
-    return (
-        <div className="relative w-full h-full overflow-hidden bg-card border border-border">
-            <svg
-                ref={svgRef}
-                viewBox={`0 0 ${SVG_VIEWBOX_WIDTH} ${SVG_VIEWBOX_HEIGHT}`}
-                preserveAspectRatio="xMidYMid meet"
-                className="absolute inset-0 block h-full w-full bg-muted/30"
-                aria-labelledby="heatmap-title-dynamic"
-                role="img"
-            >
-                <title id="heatmap-title-dynamic">{`${currentConfig?.label || 'Data'} Heatmap`}</title>
-                <desc>{`Choropleth heatmap visualization of ${currentConfig?.label || 'data'}.`}</desc>
-            </svg>
-        </div>
-    );
+        const newSvgLayer = d3.select(map.getCanvasContainer())
+            .append('svg')
+            .attr('class', 'd3-overlay absolute top-0 left-0 w-full h-full pointer-events-none z-[5]')
+        svgLayerRef.current = newSvgLayer;
+        imageLayerGroupRef.current = newSvgLayer.append('g').attr('class', 'd3-heatmap-image-layer');
+        contentGroupRef.current = newSvgLayer.append('g').attr('class', 'd3-heatmap-content-layer');
+
+        const mapMoveHandler = () => renderOverlay();
+        map.on('move', mapMoveHandler);
+        map.on('zoom', mapMoveHandler);
+        map.on('resize', mapMoveHandler);
+
+        if (map.isStyleLoaded()) {
+            renderOverlay();
+        } else {
+            map.once('styledata', renderOverlay);
+        }
+
+        return () => {
+            map.off('move', mapMoveHandler);
+            map.off('zoom', mapMoveHandler);
+            map.off('resize', mapMoveHandler);
+            svgLayerRef.current?.remove();
+            svgLayerRef.current = null;
+            contentGroupRef.current = null;
+            imageLayerGroupRef.current = null;
+        };
+    }, [map, renderOverlay]);
+
+    useEffect(() => {
+        if (map && map.isStyleLoaded() && svgLayerRef.current) {
+            renderOverlay();
+        }
+    }, [lakeData, stations, currentDataForTimepoint, currentRange, currentConfig, currentTimePoint, renderOverlay]);
+
+    return null;
 };
 
 export default HeatmapRenderer;
