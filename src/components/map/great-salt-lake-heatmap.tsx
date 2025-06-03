@@ -205,26 +205,29 @@ const GreatSaltLakeHeatmap: React.FC = () => {
 
         mapRef.current = new maplibregl.Map({
             container: mapContainerRef.current,
-            style: {
-                version: 8,
-                sources: {
-                    'agrc-raster-tiles': {
-                        'type': 'raster',
-                        'tiles': [agrcTileUrl],
-                        'tileSize': 256,
-                        'attribution': '<a href="https://gis.utah.gov/" target="_blank">UGRC</a>'
-                    }
-                },
-                layers: [
-                    {
-                        'id': 'agrc-basemap-layer',
-                        'type': 'raster',
-                        'source': 'agrc-raster-tiles',
-                        'minzoom': 0,
-                        'maxzoom': 22
-                    }
-                ]
-            }, center: GSL_CENTER,
+            // style: {
+            //     version: 8,
+            //     sources: {
+            //         'agrc-raster-tiles': {
+            //             'type': 'raster',
+            //             'tiles': [agrcTileUrl],
+            //             'tileSize': 256,
+            //             'attribution': '<a href="https://gis.utah.gov/" target="_blank">UGRC</a>'
+            //         }
+            //     },
+            //     layers: [
+            //         {
+            //             'id': 'agrc-basemap-layer',
+            //             'type': 'raster',
+            //             'source': 'agrc-raster-tiles',
+            //             'minzoom': 0,
+            //             'maxzoom': 22
+            //         }
+            //     ]
+            // }, 
+            // add openfreemap style for testing until AGRC is ready
+            style: 'https://tiles.openfreemap.org/styles/liberty',
+            center: GSL_CENTER,
             zoom: INITIAL_ZOOM,
         });
 
