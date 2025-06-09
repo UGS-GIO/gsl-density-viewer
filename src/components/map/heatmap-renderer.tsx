@@ -254,7 +254,7 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
                     const stationEl = stationGroup.append('g').attr('transform', `translate(${projected.x},${projected.y})`);
                     stationEl.append('circle').attr('r', 5).attr('fill', fillColor).attr('stroke', 'black').attr('stroke-width', 1.5);
                     stationEl.append('title').text(hasData ? `${station.name}: ${value.toFixed(currentConfig.precision)} ${currentConfig.unit}` : `${station.name}: No data`);
-                    const stationLabelOffsets: Record<string, { x: number; y: number }> = { 'SJ-1': { x: -2, y: 18 }, 'RD1': { x: 8, y: -10 } };
+                    const stationLabelOffsets: Record<string, { x: number; y: number }> = { 'SJ-1': { x: 14, y: -10 }, 'RD1': { x: 8, y: -10 } };
                     const DEFAULT_STATION_LABEL_OFFSET = { x: 0, y: 15 };
                     const offset = stationLabelOffsets[station.id] || DEFAULT_STATION_LABEL_OFFSET;
                     stationEl.append('text').attr('x', offset.x).attr('y', offset.y)
