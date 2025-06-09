@@ -260,7 +260,7 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
                     stationEl.append('text').attr('x', offset.x).attr('y', offset.y)
                         .attr('text-anchor', 'middle').attr('fill', 'hsl(var(--foreground))')
                         .style('font-size', '10px').style('paint-order', 'stroke').style('stroke', 'hsl(var(--background))').style('stroke-width', '2.5px')
-                        .text(station.name);
+                        .text(hasData ? `${station.name} (${value.toFixed(currentConfig.precision)})` : station.name);
                 }
             }
         });
