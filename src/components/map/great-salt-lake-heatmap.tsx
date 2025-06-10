@@ -59,37 +59,32 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         }
     }), []);
 
-const { data: geoJsonQueryResult, error: geoJsonQueryError, isLoading: isGeoJsonLoading } = useQuery<GeoJsonResult, Error>({
-    queryKey: ['geoJsonData'],
-    queryFn: loadGeoJsonData,
-    staleTime: Infinity,
-});
+    const { data: geoJsonQueryResult, error: geoJsonQueryError, isLoading: isGeoJsonLoading } = useQuery<GeoJsonResult, Error>({
+        queryKey: ['geoJsonData'],
+        queryFn: loadGeoJsonData,
+        staleTime: Infinity,
+    });
 
-const { data: siteDataQueryResult, error: siteDataQueryError, isLoading: isSiteDataLoading } = useQuery<SiteDataResult, Error>({
-    queryKey: ['siteAndTempData'],
-    queryFn: loadSiteAndTempData,
-    retry: 3,
-});
+    const { data: siteDataQueryResult, error: siteDataQueryError, isLoading: isSiteDataLoading } = useQuery<SiteDataResult, Error>({
+        queryKey: ['siteAndTempData'],
+        queryFn: loadSiteAndTempData,
+        retry: 3,
+    });
 
-// Compute overall loading state
-const isAnyDataLoading = isGeoJsonLoading || isSiteDataLoading;
-const hasDataErrors = geoJsonQueryError || siteDataQueryError;
+    const lakeData = useMemo((): LakeDataProps => {
+        // Don't process until loading is complete
+        if (isGeoJsonLoading) {
+            return createSimpleGeoJSON();
+        }
+        
+        if (geoJsonQueryError || geoJsonQueryResult?.error || !geoJsonQueryResult?.data) {
+            if (geoJsonQueryError) console.error("GeoJSON query error:", geoJsonQueryError.message);
+            if (geoJsonQueryResult?.error) console.error("GeoJSON app error:", geoJsonQueryResult.error);
+            return createSimpleGeoJSON();
+        }
 
-const lakeData = useMemo((): LakeDataProps => {
-    // Don't process until loading is complete
-    if (isGeoJsonLoading) {
-        return createSimpleGeoJSON();
-    }
-    
-    if (geoJsonQueryError || geoJsonQueryResult?.error || !geoJsonQueryResult?.data) {
-        if (geoJsonQueryError) console.error("GeoJSON query error:", geoJsonQueryError.message);
-        if (geoJsonQueryResult?.error) console.error("GeoJSON app error:", geoJsonQueryResult.error);
-        return createSimpleGeoJSON();
-    }
-    
-    console.log('✅ Using real GeoJSON data');
-    return geoJsonQueryResult.data;
-}, [geoJsonQueryResult, geoJsonQueryError, isGeoJsonLoading]);
+        return geoJsonQueryResult.data;
+    }, [geoJsonQueryResult, geoJsonQueryError, isGeoJsonLoading]);
 
 
     const usingMockData: boolean = useMemo(() => siteDataQueryResult?.usingMockData || false, [siteDataQueryResult]);
