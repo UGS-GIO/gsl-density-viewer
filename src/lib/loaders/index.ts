@@ -106,16 +106,19 @@ const DEFAULT_LATITUDE = 41.0; // Default placeholder
 const DEFAULT_LONGITUDE = -112.5; // Default placeholder
 
 // Define the list of allowed site IDs
-const ALLOWED_SITES = ['AC3', 'AIS', 'AS2', 'FB2', 'RT4', 'RD2', 'SJ-1', 'RD1', 'LVG4'];
+const ALLOWED_SITES = ['AC3', 'AIS', 'AS2', 'FB2', 'RT4', 'RD2', 'SJ-1', 'LVG4'];
 
 // Define the minimum date (January 1, 2000)
 const MIN_DATE = new Date(2000, 0, 1);
+
+// Timeout for fetch requests
+const FETCH_TIMEOUT_MS = 5000; // 5 seconds
 
 // Helper: Load GeoJSON
 export const loadGeoJsonData = async () => {
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
         const response = await fetch(GSL_OUTLINE_ENDPOINT, { signal: controller.signal });
         clearTimeout(timeoutId);
         if (!response.ok) {
@@ -371,7 +374,7 @@ export const loadSiteAndTempData = async () => {
 
         // Fetch API data
         try {
-            const response = await fetch(API_ENDPOINT, { method: 'GET', headers: API_HEADERS, signal: AbortSignal.timeout(5000) });
+            const response = await fetch(API_ENDPOINT, { method: 'GET', headers: API_HEADERS, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
             if (response.ok) {
                 sitesJson = await response.json();
                 apiSuccessful = true;
