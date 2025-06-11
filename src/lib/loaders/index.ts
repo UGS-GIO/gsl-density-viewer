@@ -54,7 +54,6 @@ export interface AllLoadedData {
 
 export type VariableKey = keyof AllLoadedData;
 
-
 // For dataRanges: { variableKey: [min, max] }
 export type DataRanges = Record<string, [number, number]>;
 
@@ -83,17 +82,6 @@ interface ApiSiteFeatureProperties {
     [name: string]: any // todo: explore removing this
 }
 
-type SalinityData = {
-    [yearMonth: string]: {
-        [stationId: string]: number;
-    };
-};
-type DensityData = {
-    [yearMonth: string]: {
-        [stationId: string]: number;
-    };
-};
-
 // Constants
 const API_ENDPOINT = 'https://postgrest-seamlessgeolmap-734948684426.us-central1.run.app/gsl_brine_sites';
 const API_HEADERS = { 'Accept': 'application/geo+json', 'Accept-Profile': 'emp' };
@@ -115,7 +103,7 @@ const MIN_DATE = new Date(2000, 0, 1);
 const FETCH_TIMEOUT_MS = 5000; // 5 seconds
 
 // Helper: Load GeoJSON
-export const loadGeoJsonData = async () => {
+export const loadGeoJsonData = async (): Promise<GeoJsonResult> => {
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -138,7 +126,6 @@ export const loadGeoJsonData = async () => {
         }
     }
 };
-
 
 // Helper: Process temperature data
 const processTemperatureData = (
@@ -216,7 +203,6 @@ const processSiteCoordinates = (site: ApiSite): ProcessedStation => {
     }
 
     if (longitude === null || latitude === null) {
-        // console.warn(`Using default coordinates for site ${stationId}`); // Keep for dev if useful
         longitude = DEFAULT_LONGITUDE; // Default placeholder
         latitude = DEFAULT_LATITUDE;   // Default placeholder
         coordsSource = 'default';
@@ -224,7 +210,7 @@ const processSiteCoordinates = (site: ApiSite): ProcessedStation => {
     return { id: stationId, name: site.site || `Site ${String(site.id)}`, longitude, latitude, coordsSource };
 };
 
-// --- Helper function to extract density ---
+// Helper function to extract density
 const extractDensityValue = (reading: ApiReading): number | null => {
     const possibleKeys = ['LABminusDENg/cm3', 'LABminusDEN\ng/cm3', 'LABminusDEN\\ng/cm3', 'density'];
     for (const key of possibleKeys) {
@@ -252,38 +238,37 @@ const extractDensityValue = (reading: ApiReading): number | null => {
     return null;
 };
 
-
-// --- NEW: Helper function to extract salinity ---
+// Helper function to extract salinity
 const extractSalinityValue = (reading: ApiReading): number | null => {
-    const salinityEOSKey = Object.keys(reading).find(key => key.toLowerCase() === 'salinity eos (g/l)');
+    const tdsKey = Object.keys(reading).find(key => 
+        key.toLowerCase().includes('tds') && key.toLowerCase().includes('g/l')
+    );
+    
+    if (tdsKey && reading[tdsKey] !== null && reading[tdsKey] !== undefined) {
+        const tds = parseFloat(String(reading[tdsKey]));
+        if (!isNaN(tds) && tds > 0) return tds; 
+    }
+    
+    const salinityEOSKey = Object.keys(reading).find(key => 
+        key.toLowerCase() === 'salinity eos (g/l)'
+    );
+    
     if (salinityEOSKey && reading[salinityEOSKey] !== null && reading[salinityEOSKey] !== undefined) {
         const salinity = parseFloat(String(reading[salinityEOSKey]));
-        if (!isNaN(salinity)) return salinity;
+        if (!isNaN(salinity) && salinity > 0) return salinity;
     }
-    // Fallback to a generic "salinity" key
+    
     if (reading.salinity !== undefined && reading.salinity !== null) {
         const salinity = parseFloat(String(reading.salinity));
-        // Assuming this might be in ppt or another unit; direct return for now.
-        // If conversion to g/L is needed and this isn't already g/L, add it here.
-        if (!isNaN(salinity)) return salinity;
+        if (!isNaN(salinity) && salinity > 0) return salinity;
     }
+    
     return null;
 };
 
-// Helper: Check date
-const isDateOnOrAfter2000 = (dateStr: string) => {
-    try {
-        const date = new Date(dateStr);
-        if (isNaN(date.getTime())) return false;
-        return date >= MIN_DATE;
-    } catch (e) { return false; }
-};
 
 /**
  * Checks if a given date string represents a date that is on or after January 1, 2000.
- *
- * @param dateStr - The date string to check (e.g., "2023-01-15", "01/15/2023").
- * @returns {boolean} True if the date is valid and on or after January 1, 2000, otherwise false.
  */
 export const isDateOnOrAfterMinDate = (dateStr: string): boolean => {
     if (!dateStr) {
@@ -303,265 +288,158 @@ export const isDateOnOrAfterMinDate = (dateStr: string): boolean => {
     }
 };
 
-
-interface MockDenSityForStationsProps {
-    stations: ProcessedStation[];
-    timePoints: string[];
-    temperatureData: TemperatureMap;
-}
-
-
-// --- Helper function to generate mock density ---
-const generateMockDensityForStations = ({ stations, timePoints, temperatureData }: MockDenSityForStationsProps) => {
-    const densityData: DensityData = {};
-
-    timePoints.forEach(yearMonth => {
-        densityData[yearMonth] = {};
-        const [year, month] = yearMonth.split('-').map(Number);
-        const temp = temperatureData[yearMonth];
-        stations.forEach((station, index) => {
-            const tempFactor = temp ? (temp - 30) / 50 * 0.03 : 0;
-            const yearFactor = (year - 2000) * 0.0005;
-            const seasonalFactor = Math.sin((month - 1) / 12 * 2 * Math.PI) * 0.01;
-            const stationFactor = (index / stations.length) * 0.05;
-            const randomFactor = (Math.random() - 0.5) * 0.015;
-            const baseDensity = 1.10 + tempFactor + yearFactor + seasonalFactor + stationFactor + randomFactor;
-            densityData[yearMonth][station.id] = Math.max(1.02, Math.min(1.28, baseDensity));
-        });
-    });
-    return densityData;
-};
-
-
-// --- NEW: Helper function to generate mock salinity ---
-const generateMockSalinityForStations = ({ stations, timePoints, temperatureData }: MockDenSityForStationsProps) => {
-    const salinityData: SalinityData = {};
-    const baseSalinity = 150; // Base g/L - adjust if needed
-
-    timePoints.forEach(yearMonth => {
-        salinityData[yearMonth] = {};
-        const [year, month] = yearMonth.split('-').map(Number);
-        const temp = temperatureData[yearMonth];
-
-        stations.forEach((station, index) => {
-            const tempFactor = temp ? (temp - 50) / 50 * -10 : 0; // Example inverse relation
-            const yearFactor = (year - 2000) * 0.1;
-            const seasonalFactor = Math.sin((month - 1) / 12 * 2 * Math.PI) * -15; // Lower in summer
-            const stationFactor = (index / stations.length) * 30;
-            const randomFactor = (Math.random() - 0.5) * 20;
-            let salinity = baseSalinity + tempFactor + yearFactor + seasonalFactor + stationFactor + randomFactor;
-            salinityData[yearMonth][station.id] = Math.max(30, Math.min(280, salinity)); // g/L range
-        });
-    });
-    return salinityData;
-};
-
-
-// --- Main data loading function ---
-export const loadSiteAndTempData = async () => {
+// Main data loading function - API ONLY, NO MOCK DATA
+export const loadSiteAndTempData = async (): Promise<SiteDataResult> => {
     try {
-        let sitesJson: FeatureCollection<Point, ApiSiteFeatureProperties> = { type: 'FeatureCollection', features: [] };
+        let sitesJson: FeatureCollection<Point, ApiSiteFeatureProperties> = { 
+            type: 'FeatureCollection', 
+            features: [] 
+        };
         let processedStations: ProcessedStation[] = [];
         let tempLookup: TemperatureMap = {};
-        let errorMessage = null;
-        let apiSuccessful = false;
-        let apiTempIntermediateLookup: Record<string, { sum: number; count: number }> = {};
-        let densityLookup: TimePointStationData = {};
-        let salinityLookup: TimePointStationData = {};
-        let timePointsSet = new Set<string>(); // To collect all unique YYYY-MM strings
-        let hasRealDensity = false;
-        let hasRealSalinity = false;
+        let errorMessage: string | null = null;
+        const densityLookup: TimePointStationData = {};
+        const salinityLookup: TimePointStationData = {};
+        let timePointsSet = new Set<string>();
+
+
 
         // Fetch API data
         try {
-            const response = await fetch(API_ENDPOINT, { method: 'GET', headers: API_HEADERS, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-            if (response.ok) {
-                sitesJson = await response.json();
-                apiSuccessful = true;
-                const filteredSites = sitesJson.features.filter(site => ALLOWED_SITES.includes(site.properties.site || `site-${site.properties.id}`));
-                sitesJson.features = filteredSites;
-                processedStations = sitesJson.features.map(
-                    (feature: Feature<Point, ApiSiteFeatureProperties>): ProcessedStation => {
-                        const properties = feature.properties || {};
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+            
+            const response = await fetch(API_ENDPOINT, { 
+                method: 'GET', 
+                headers: API_HEADERS, 
+                signal: controller.signal 
+            });
+            
+            clearTimeout(timeoutId);
 
-                        const siteArgForOldFunction: ApiSite = {
-                            // 1. Ensure unique ID:
-                            id: String(properties.id || feature.id || properties.site || `fallback-${Math.random().toString(36).substring(2)}`),
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
 
-                            // 2. Map other properties:
-                            site: properties.site,
-                            geom: feature.geometry,
-                            utmeasting: properties.utmeasting,
-                            utmnorthing: properties.utmnorthing,
-                            readings: properties.readings,
-                        };
+            sitesJson = await response.json();
+            console.log('API fetch successful');
 
-                        return processSiteCoordinates(siteArgForOldFunction);
+            // Filter to allowed sites only
+            const filteredSites = sitesJson.features.filter(site => 
+                ALLOWED_SITES.includes(site.properties?.site || `site-${site.properties?.id}`)
+            );
+            sitesJson.features = filteredSites;
+
+            // Process stations
+            processedStations = sitesJson.features
+                .map((feature: Feature<Point, ApiSiteFeatureProperties>): ProcessedStation => {
+                    const properties = feature.properties || {};
+                    const siteArgForOldFunction: ApiSite = {
+                        id: String(properties.id || feature.id || properties.site || `fallback-${Math.random().toString(36).substring(2)}`),
+                        site: properties.site,
+                        geom: feature.geometry,
+                        utmeasting: properties.utmeasting,
+                        utmnorthing: properties.utmnorthing,
+                        readings: properties.readings,
+                    };
+                    return processSiteCoordinates(siteArgForOldFunction);
+                })
+                .filter(station => station.longitude != null && station.latitude != null);
+
+
+            // Process readings - ONLY real data
+            if (processedStations.length > 0 && sitesJson.features.length > 0) {
+                sitesJson.features.forEach(feature => {
+                    const stationIdFromProps = feature.properties?.site || 
+                        (feature.id ? `feature-${String(feature.id)}` : undefined);
+                    const station = processedStations.find(ps => ps.id === stationIdFromProps);
+
+                    if (!station || !feature.properties?.readings || !Array.isArray(feature.properties.readings)) {
+                        return;
                     }
-                ).filter(station => station.longitude != null && station.latitude != null);
 
-                if (processedStations.length > 0 && sitesJson.features.length > 0) {
-                    sitesJson.features.forEach(feature => {
-                        // Find the corresponding ProcessedStation to ensure we're only working with allowed/valid stations
-                        // and to use its consistent 'id'.
-                        const stationIdFromProps = feature.properties?.site || (feature.id ? `feature-${String(feature.id)}` : undefined);
-                        const station = processedStations.find(ps => ps.id === stationIdFromProps);
 
-                        if (!station || !feature.properties?.readings || !Array.isArray(feature.properties.readings)) {
-                            return; // Skip if no matching processed station or no readings
+                    feature.properties.readings.forEach(reading => {
+                        if (!reading.date || !isDateOnOrAfterMinDate(reading.date)) {
+                            return;
                         }
 
-                        feature.properties.readings.forEach(reading => {
-                            if (!reading.date || !isDateOnOrAfterMinDate(reading.date)) {
-                                return; // Skip if no valid date or date is before MIN_DATE
+                        try {
+                            const dateObj = new Date(reading.date);
+                            if (isNaN(dateObj.getTime())) return;
+
+                            const year = dateObj.getFullYear();
+                            const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+                            const yearMonth = `${year}-${month}`;
+
+                            timePointsSet.add(yearMonth);
+
+                            // Process Density Data - ONLY if it exists
+                            const densityValue = extractDensityValue(reading);
+                            if (densityValue !== null) {
+                                if (!densityLookup[yearMonth]) {
+                                    densityLookup[yearMonth] = {};
+                                }
+                                (densityLookup[yearMonth] as StationDataValues)[station.id] = densityValue;
                             }
 
-                            try {
-                                const dateObj = new Date(reading.date);
-                                if (isNaN(dateObj.getTime())) return; // Skip invalid dates
-
-                                const year = dateObj.getFullYear();
-                                const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
-                                const yearMonth = `${year}-${month}`;
-
-                                timePointsSet.add(yearMonth);
-
-                                // 1. Process Temperature Data (collect for averaging)
-                                if (reading.temperature != null && typeof reading.temperature === 'number' && !isNaN(reading.temperature)) {
-                                    if (!apiTempIntermediateLookup[yearMonth]) {
-                                        apiTempIntermediateLookup[yearMonth] = { sum: 0, count: 0 };
-                                    }
-                                    apiTempIntermediateLookup[yearMonth].sum += reading.temperature;
-                                    apiTempIntermediateLookup[yearMonth].count++;
+                            // Process Salinity Data - ONLY if it exists
+                            const salinityValue = extractSalinityValue(reading);
+                            if (salinityValue !== null) {
+                                if (!salinityLookup[yearMonth]) {
+                                    salinityLookup[yearMonth] = {};
                                 }
-
-                                // 2. Process Density Data
-                                const densityValue = extractDensityValue(reading);
-                                if (densityValue !== null) {
-                                    hasRealDensity = true;
-                                    if (!densityLookup[yearMonth]) {
-                                        densityLookup[yearMonth] = {};
-                                    }
-                                    // Type assertion to assure TypeScript that densityLookup[yearMonth] is now defined
-                                    (densityLookup[yearMonth] as StationDataValues)[station.id] = densityValue;
-                                }
-
-                                // 3. Process Salinity Data
-                                const salinityValue = extractSalinityValue(reading);
-                                if (salinityValue !== null) {
-                                    hasRealSalinity = true;
-                                    if (!salinityLookup[yearMonth]) {
-                                        salinityLookup[yearMonth] = {};
-                                    }
-                                    // Type assertion
-                                    (salinityLookup[yearMonth] as StationDataValues)[station.id] = salinityValue;
-                                }
-                            } catch (parseError: any) {
-                                console.warn(`Error parsing reading for station ${station.id}:`, parseError.message);
+                                (salinityLookup[yearMonth] as StationDataValues)[station.id] = salinityValue;
                             }
-                        });
+                        } catch (parseError: any) {
+                            console.warn(`Error parsing reading for station ${station.id}:`, parseError.message);
+                        }
                     });
-                }
-            } else { errorMessage = `API fetch failed: ${response.status} ${response.statusText}`; console.warn(errorMessage); }
+                });
+            }
+
         } catch (apiError) {
             if (apiError instanceof Error) {
                 errorMessage = `Error fetching from API: ${apiError.message}`;
-                console.error(errorMessage, apiError);
+                console.error('❌ API Error:', errorMessage);
             } else {
                 errorMessage = `Unknown error occurred while fetching from API.`;
-                console.error(errorMessage, apiError);
+                console.error('❌ Unknown API Error:', apiError);
             }
+            
+            // Return empty data on API failure - NO MOCK FALLBACK
+            return {
+                stations: [],
+                timePoints: [],
+                allData: {},
+                dataRanges: {},
+                usingMockData: false,
+                error: errorMessage
+            };
         }
 
-        // Process hardcoded temperature data (keep as before)
+        // Process hardcoded temperature data (keep this as it's separate from mock generation)
         try {
             const tempResult = processTemperatureData(timePointsSet, tempLookup);
             if (tempResult) {
                 timePointsSet = new Set(tempResult.timePoints);
                 tempLookup = tempResult.temperatureData;
             }
-        } catch (tempError) { console.warn("Error processing temperature data:", tempError); }
+        } catch (tempError) {
+            console.warn("Error processing temperature data:", tempError);
+        }
 
-        // Filter and sort time points (keep as before)
+        // Filter and sort time points
         const allTimePoints = Array.from(timePointsSet)
             .filter(yearMonth => {
-                const [year] = yearMonth.split('-').map(Number); return year >= 2000;
+                const [year] = yearMonth.split('-').map(Number);
+                return year >= 2000;
             })
             .sort();
 
-        // --- Generate/Supplement Density & Salinity ---
-        let usingMockData = false;
-        if (processedStations.length > 0 && allTimePoints.length > 0) {
-            if (!hasRealDensity) {
-                densityLookup = generateMockDensityForStations({ stations: processedStations, timePoints: allTimePoints, temperatureData: tempLookup });
-                usingMockData = true; // Mark if density is fully mocked
-            } else {
-                const syntheticDensity = generateMockDensityForStations({ stations: processedStations, timePoints: allTimePoints, temperatureData: tempLookup });
-                allTimePoints.forEach(yearMonth => {
-                    const densityLookupYearMonth = densityLookup[yearMonth] ?? (densityLookup[yearMonth] = {});
 
-                    processedStations.forEach(station => {
-                        if (densityLookupYearMonth?.[station.id] === undefined &&
-                            syntheticDensity[yearMonth]?.[station.id] !== undefined) {
-                            densityLookupYearMonth[station.id] = syntheticDensity[yearMonth][station.id];
-                        }
-                    });
-                });
-            }
-
-            // ++ Generate/Supplement Salinity ++
-            if (!hasRealSalinity) {
-                salinityLookup = generateMockSalinityForStations({ stations: processedStations, timePoints: allTimePoints, temperatureData: tempLookup });
-                // Set usingMockData only if density is also mocked
-                if (!hasRealDensity) usingMockData = true;
-            } else {
-                const syntheticSalinity = generateMockSalinityForStations({ stations: processedStations, timePoints: allTimePoints, temperatureData: tempLookup });
-                allTimePoints.forEach(yearMonth => {
-                    if (!salinityLookup[yearMonth]) salinityLookup[yearMonth] = {};
-                    processedStations.forEach(station => {
-                        if (salinityLookup[yearMonth]?.[station.id] === undefined &&
-                            syntheticSalinity[yearMonth]?.[station.id] !== undefined) {
-                            const salinityLookupYearMonth = salinityLookup[yearMonth] ?? (salinityLookup[yearMonth] = {});
-                            salinityLookupYearMonth[station.id] = syntheticSalinity[yearMonth][station.id];
-                        }
-                    });
-                });
-            }
-        }
-
-        // --- Handle complete mock data generation if necessary ---
-        if (processedStations.length === 0 || allTimePoints.length === 0) {
-            // ... (This section is largely the same as before, ensure it generates both lookups) ...
-            console.warn("Insufficient initial data. Generating complete mock dataset.");
-            usingMockData = true;
-            errorMessage = errorMessage || "Data unavailable. Displaying simulated data.";
-            processedStations = ALLOWED_SITES.map((id, index) => ({
-                id, name: `Site ${id}`,
-                longitude: -112.5 + 0.2 * Math.cos(index / ALLOWED_SITES.length * 2 * Math.PI),
-                latitude: 41.0 + 0.2 * Math.sin(index / ALLOWED_SITES.length * 2 * Math.PI),
-                coordsSource: 'mock'
-            }));
-            const mockTimePoints = []; // generate points from 2000 to present
-            const startYear = 2000; const endYear = new Date().getFullYear(); const endMonth = new Date().getMonth() + 1;
-            for (let y = startYear; y <= endYear; y++) {
-                const mLimit = y === endYear ? endMonth : 12;
-                for (let m = 1; m <= mLimit; m++) mockTimePoints.push(`${y}-${m.toString().padStart(2, '0')}`);
-            }
-            allTimePoints.push(...mockTimePoints.filter(tp => !allTimePoints.includes(tp)));
-            allTimePoints.sort();
-            allTimePoints.forEach(tp => {
-                if (!tempLookup[tp]) {
-                    const [y, m] = tp.split('-').map(Number);
-                    tempLookup[tp] = 50 + Math.sin((m - 1) / 12 * 2 * Math.PI) * 25 + (y - startYear) * 0.2 + (Math.random() - 0.5) * 5;
-                }
-            });
-            densityLookup = generateMockDensityForStations({ stations: processedStations, timePoints: allTimePoints, temperatureData: tempLookup });
-            salinityLookup = generateMockSalinityForStations({ stations: processedStations, timePoints: allTimePoints, temperatureData: tempLookup });
-        }
-
-        // --- Calculate ranges for BOTH variables ---
+        // Calculate ranges ONLY from real data
         const calculateRange = (dataLookup: TimePointStationData): [number, number] => {
-            let range: [number, number] = [0, 1]; // Default range
             const allValues: number[] = [];
 
             if (dataLookup && typeof dataLookup === 'object') {
@@ -576,50 +454,33 @@ export const loadSiteAndTempData = async () => {
                 });
             }
 
-            if (allValues.length > 0) {
-                const minVal = Math.min(...allValues);
-                const maxVal = Math.max(...allValues);
-                const padding = (maxVal - minVal) * 0.02 || (maxVal * 0.02); // Add padding, handle min=max
-                range = [Math.max(0, minVal - padding), maxVal + padding];
+            if (allValues.length === 0) {
+                return [0, 1]; // Default if no data
+            }
 
-                if (range[0] === range[1]) {
-                    // Ensure range is valid if min=max
-                    range[0] = Math.max(0, range[0] * 0.9);
-                    range[1] = range[1] * 1.1 || 0.1; // Ensure max is slightly > min
-                }
+            const minVal = Math.min(...allValues);
+            const maxVal = Math.max(...allValues);
+            const padding = (maxVal - minVal) * 0.02 || (maxVal * 0.02);
+            let range: [number, number] = [Math.max(0, minVal - padding), maxVal + padding];
+
+            if (range[0] === range[1]) {
+                range[0] = Math.max(0, range[0] * 0.9);
+                range[1] = range[1] * 1.1 || 0.1;
             }
 
             return range;
         };
 
-        const densityRangeTuple = calculateRange(densityLookup); // Already returns [number, number]
-        const salinityRangeTuple = calculateRange(salinityLookup); // Already returns [number, number]
-
-
-        const DEFAULT_DENSITY_FALLBACK: [number, number] = [1.0, 1.25];
-        const DEFAULT_SALINITY_FALLBACK: [number, number] = [50, 250];
-
-        // Assuming calculateRange always returns [number, number], densityRangeTuple[0] will not be null.
-        // Adjust the condition if calculateRange could return something where densityRangeTuple[0] could be null.
-        const conditionForDensityDefault = (densityRangeTuple[0] === 0 && densityRangeTuple[1] === 1);
-        const finalDensityRange: [number, number] = conditionForDensityDefault
-            ? DEFAULT_DENSITY_FALLBACK
-            : densityRangeTuple;
-
-        const conditionForSalinityDefault = (salinityRangeTuple[0] === 0 && salinityRangeTuple[1] === 1);
-        const finalSalinityRange: [number, number] = conditionForSalinityDefault
-            ? DEFAULT_SALINITY_FALLBACK
-            : salinityRangeTuple;
-
-        // Apply specific defaults if calculation resulted in [0, 1] or still null
-        // const finalDensityRange: [number, number] = (densityRange[0] === 0 && densityRange[1] === 1) || densityRange[0] === null ? [1.0, 1.25] : densityRange;
-        // const finalSalinityRange: [number, number] = (salinityRange[0] === 0 && salinityRange[1] === 1) || salinityRange[0] === null ? [50, 250] : salinityRange;
+        const densityRange = calculateRange(densityLookup);
+        const salinityRange = calculateRange(salinityLookup);
 
         const dataRanges: DataRanges = {
-            density: finalDensityRange,
-            salinity: finalSalinityRange
+            density: densityRange,
+            salinity: salinityRange
         };
 
+
+        // Build final result - NO MOCK DATA EVER
         const result: SiteDataResult = {
             stations: processedStations,
             timePoints: allTimePoints,
@@ -629,37 +490,27 @@ export const loadSiteAndTempData = async () => {
                 temperature: tempLookup
             },
             dataRanges: dataRanges,
-            usingMockData,
+            usingMockData: false, // Never using mock data
             error: errorMessage
         };
 
-
-        // --- Structure the return object ---
         return result;
 
     } catch (err) {
-        // --- Fallback ---
-
+        // Complete failure - return empty data, NO MOCK FALLBACK
         let errorMessage = 'Failed to load data';
         if (err instanceof Error) {
             errorMessage = `Failed to load data: ${err.message}`;
         }
-        console.error('DataLoader Critical Error:', err);
-        const mockStations: ProcessedStation[] = ALLOWED_SITES.map((id, index) => ({ id, name: `Site ${id}`, longitude: -112.5 + 0.2 * Math.cos(index / ALLOWED_SITES.length * 2 * Math.PI), latitude: 41.0 + 0.2 * Math.sin(index / ALLOWED_SITES.length * 2 * Math.PI), coordsSource: 'mock' }));
-        const mockTimePoints = []; const startYear = 2000; const endYear = 2025; const currentMonth = new Date().getMonth() + 1;
-        for (let y = startYear; y <= endYear; y++) { for (let m = 1; m <= 12; m++) { if (y === endYear && m > currentMonth) continue; mockTimePoints.push(`${y}-${m.toString().padStart(2, '0')}`); } }
-        const mockTempData: TemperatureMap = {};
-        mockTimePoints.forEach(tp => { const [y, m] = tp.split('-').map(Number); mockTempData[tp] = 50 + Math.sin((m - 1) / 12 * 2 * Math.PI) * 25 + (y - startYear) * 0.2 + (Math.random() - 0.5) * 5; });
-        const mockDensityData = generateMockDensityForStations({ stations: mockStations, timePoints: mockTimePoints, temperatureData: mockTempData });
-        const mockSalinityData = generateMockSalinityForStations({ stations: mockStations, timePoints: mockTimePoints, temperatureData: mockTempData });
+        console.error('💥 Complete data loading failure:', err);
 
         return {
-            stations: mockStations,
-            timePoints: mockTimePoints,
-            allData: { density: mockDensityData, salinity: mockSalinityData, temperature: mockTempData },
-            dataRanges: { density: [1.05, 1.20] as [number, number], salinity: [50, 250] as [number, number] },
-            usingMockData: true,
-            error: `Failed to load data: ${errorMessage}`
+            stations: [],
+            timePoints: [],
+            allData: {},
+            dataRanges: {},
+            usingMockData: false,
+            error: errorMessage
         };
     }
 };

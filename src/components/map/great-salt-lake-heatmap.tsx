@@ -48,14 +48,6 @@ const GreatSaltLakeHeatmap: React.FC = () => {
             precision: 1,
             interpolate: 'interpolateGreens',
             defaultRange: [50, 250]
-        },
-        temperature: {
-            key: 'temperature',
-            label: 'Avg Temp',
-            unit: '°F',
-            precision: 1,
-            interpolate: 'interpolateOrRd',
-            defaultRange: [0, 100]
         }
     }), []);
 
@@ -99,13 +91,34 @@ const GreatSaltLakeHeatmap: React.FC = () => {
 
     const availableVariables: VariableKey[] = useMemo(() => {
         const heatmapVars = Object.keys(allData)
-            .filter((key): key is VariableKey => key in VARIABLE_CONFIGS && (key === 'density' || key === 'salinity'));
-        return heatmapVars.length > 0 ? heatmapVars : ['density'];
+            .filter((key): key is VariableKey => {
+                if (!(key in VARIABLE_CONFIGS)) return false;
+                
+                // Only include variables that have actual data
+                const dataSet = allData[key as VariableKey];
+                if (key === 'temperature') {
+                    return dataSet && Object.keys(dataSet).length > 0;
+                } else {
+                    // For density/salinity, check if any timepoint has data
+                    return dataSet && Object.values(dataSet).some(monthData => 
+                        monthData && Object.keys(monthData).length > 0
+                    );
+                }
+            });
+        
+        return heatmapVars.length > 0 ? heatmapVars : [];
     }, [allData, VARIABLE_CONFIGS]);
 
+
+
     useEffect(() => {
-        if (availableVariables.length > 0 && !availableVariables.includes(selectedVariable))
+        if (availableVariables.length === 0) {
+            return;
+        }
+        
+        if (!availableVariables.includes(selectedVariable)) {
             setSelectedVariable(availableVariables[0]);
+        }
     }, [availableVariables, selectedVariable]);
 
 
@@ -138,7 +151,13 @@ const GreatSaltLakeHeatmap: React.FC = () => {
     const currentDataForTimepoint: StationDataValues | {} = useMemo(() => {
         if (selectedVariable === 'density' || selectedVariable === 'salinity') {
             const dataSet = allData[selectedVariable];
-            if (dataSet) return dataSet[currentTimePoint] || {};
+            if (dataSet && dataSet[currentTimePoint]) {
+                const monthData = dataSet[currentTimePoint];
+
+                return monthData || {};
+            } else {
+                return {};
+            }
         }
         return {};
     }, [allData, selectedVariable, currentTimePoint]);
@@ -167,6 +186,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         }
         return undefined;
     }, [currentDataForTimepoint, currentConfig]);
+    
     const legendColorScale: d3.ScaleSequential<number, string> | null = useMemo(() => {
         if (!currentConfig?.interpolate || !currentRange) return null;
         const colorInterpolator = (d3 as any)[currentConfig.interpolate] || d3.interpolateBlues;
@@ -299,6 +319,17 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                                 ` | Avg ${currentConfig.label}: ${avgValueForDisplay.toFixed(currentConfig.precision)} ${currentConfig.unit}`
                             )}
                         </p>
+                        {/* Add data availability indicator */}
+                        {Object.keys(currentDataForTimepoint).length === 0 && currentConfig.key !== 'temperature' && (
+                            <p className="text-xs text-yellow-600 font-medium">
+                                No {currentConfig.label.toLowerCase()} data available for this time period
+                            </p>
+                        )}
+                        {Object.keys(currentDataForTimepoint).length > 0 && currentConfig.key !== 'temperature' && (
+                            <p className="text-xs text-green-600 font-medium">
+                                Real data from {Object.keys(currentDataForTimepoint).length} stations
+                            </p>
+                        )}
                     </header>
                     {legendColorScale && currentRange && (
                         <div className="flex justify-center h-14 md:h-16 px-2 py-1">
