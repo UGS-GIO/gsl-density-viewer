@@ -96,10 +96,10 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                 // Only include variables that have actual data
                 const dataSet = allData[key as VariableKey];
                 if (key === 'temperature') {
-                    return dataSet && Object.keys(dataSet).length > 0;
+                    return !!dataSet && Object.keys(dataSet).length > 0;
                 } else {
                     // For density/salinity, check if any timepoint has data
-                    return dataSet && Object.values(dataSet).some(monthData => 
+                    return !!dataSet && Object.values(dataSet).some(monthData => 
                         monthData && Object.keys(monthData).length > 0
                     );
                 }
@@ -147,7 +147,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
     const currentTimePoint: string = useMemo(() => timePoints[currentTimeIndex] || '', [timePoints, currentTimeIndex]);
 
     // currentDataForTimepoint is specifically for the HeatmapRenderer (station-based data)
-    const currentDataForTimepoint: StationDataValues | {} = useMemo(() => {
+    const currentDataForTimepoint: StationDataValues = useMemo(() => {
         if (selectedVariable === 'density' || selectedVariable === 'salinity') {
             const dataSet = allData[selectedVariable];
             if (dataSet && dataSet[currentTimePoint]) {
@@ -155,7 +155,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
 
                 return monthData || {};
             } else {
-                return {};
+                return {} as StationDataValues;
             }
         }
         return {};
@@ -188,6 +188,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
     
     const legendColorScale: d3.ScaleSequential<number, string> | null = useMemo(() => {
         if (!currentConfig?.interpolate || !currentRange) return null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const colorInterpolator = (d3 as any)[currentConfig.interpolate] || d3.interpolateBlues;
         return d3.scaleSequential(colorInterpolator).domain([currentRange[1], currentRange[0]]);
     }, [currentConfig, currentRange]);

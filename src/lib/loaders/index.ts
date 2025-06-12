@@ -2,7 +2,7 @@ import proj4 from 'proj4';
 import { Feature, Point } from 'geojson';
 import { TemperatureMap, getHardcodedTemperatureData } from '@/lib/data/temperature-data';
 import { FeatureCollection, Geometry } from 'geojson';
-import { LakeFeatureProperties } from '@/components/map/great-salt-lake-heatmap';
+
 
 // Type Definition
 
@@ -19,6 +19,7 @@ interface ApiReading {
     'salinity eos (g/l)'?: string | number | null; // Case-insensitive check done in function
     salinity?: string | number | null; // General salinity, potentially ppt
     // Allow other dynamic keys
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     [key: string]: any;
 }
 
@@ -66,13 +67,8 @@ export interface GeoJsonResult {
 // Update LakeFeatureProperties to reflect new structure
 export interface LakeFeatureProperties {
     layer?: string; // Changed from 'name' to 'layer'
-    [key: string]: any;
-}
-
-// Update LakeFeatureProperties to reflect new structure
-export interface LakeFeatureProperties {
-    layer?: string; // Changed from 'name' to 'layer'
-    [key: string]: any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    [key: string]: any; 
 }
 
 // Return type for main data loading function
@@ -91,6 +87,7 @@ interface ApiSiteFeatureProperties {
     readings?: ApiReading[];
     utmeasting?: string | number | null; // Fallback if geometry is missing
     utmnorthing?: string | number | null; // Fallback
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     [name: string]: any // todo: explore removing this
 }
 
@@ -119,7 +116,6 @@ const FETCH_TIMEOUT_MS = 5000; // 5 seconds
 // Helper: Load GeoJSON
 export const loadGeoJsonData = async (): Promise<GeoJsonResult> => {
     try {
-        console.log('🌊 Loading lake outline from:', GSL_OUTLINE_ENDPOINT);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
         const response = await fetch(GSL_OUTLINE_ENDPOINT, { signal: controller.signal });
@@ -132,19 +128,6 @@ export const loadGeoJsonData = async (): Promise<GeoJsonResult> => {
         }
         
         const gslGeoJson = await response.json();
-        
-        // Debug logging
-        console.log('📊 GeoJSON Response:', {
-            type: gslGeoJson?.type,
-            featureCount: gslGeoJson?.features?.length || 0,
-            features: gslGeoJson?.features?.map((f: any, i: number) => ({
-                index: i,
-                type: f?.type,
-                geometry: f?.geometry?.type,
-                coordinates: f?.geometry?.coordinates ? 'present' : 'missing',
-                properties: f?.properties
-            })) || []
-        });
         
         return { data: gslGeoJson, error: null };
     } catch (err) {
@@ -187,7 +170,7 @@ const processTemperatureData = (
         });
         const sortedTimePoints = Array.from(timePointsSet).sort();
         return { timePoints: sortedTimePoints, temperatureData: combinedTempData };
-    } catch (error: any) {
+    } catch (error) {
         console.error("Error processing temperature data:", error);
         // Return original data if processing fails
         return { timePoints: Array.from(existingTimePoints).sort(), temperatureData: existingTempData };
@@ -207,6 +190,7 @@ const processSiteCoordinates = (site: ApiSite): ProcessedStation => {
             if (typeof site.geom === 'string') {
                 try { geomObj = JSON.parse(site.geom); } catch { /* ignore parse error */ }
             } else if (typeof site.geom === 'object' && site.geom !== null) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 geomObj = site.geom as { type?: string; coordinates?: any[] };
             }
 
@@ -229,8 +213,9 @@ const processSiteCoordinates = (site: ApiSite): ProcessedStation => {
                 coordsSource = 'utm';
             }
         }
-    } catch (coordError: any) {
-        console.warn(`Coordinate processing error for site ${stationId}:`, coordError.message);
+    } catch (coordError) {
+        const errorMessage = coordError instanceof Error ? coordError.message : String(coordError);
+        console.warn(`Coordinate processing error for site ${stationId}:`, errorMessage);
     }
 
     if (longitude === null || latitude === null) {
@@ -422,8 +407,9 @@ export const loadSiteAndTempData = async (): Promise<SiteDataResult> => {
                                 }
                                 (salinityLookup[yearMonth] as StationDataValues)[station.id] = salinityValue;
                             }
-                        } catch (parseError: any) {
-                            console.warn(`Error parsing reading for station ${station.id}:`, parseError.message);
+                        } catch (parseError) {
+                            const errorMessage = parseError instanceof Error ? parseError.message : String(parseError);
+                            console.warn(`Error parsing reading for station ${station.id}:`, errorMessage);
                         }
                     });
                 });
@@ -492,7 +478,7 @@ export const loadSiteAndTempData = async (): Promise<SiteDataResult> => {
             const minVal = Math.min(...allValues);
             const maxVal = Math.max(...allValues);
             const padding = (maxVal - minVal) * 0.02 || (maxVal * 0.02);
-            let range: [number, number] = [Math.max(0, minVal - padding), maxVal + padding];
+            const range: [number, number] = [Math.max(0, minVal - padding), maxVal + padding];
 
             if (range[0] === range[1]) {
                 range[0] = Math.max(0, range[0] * 0.9);

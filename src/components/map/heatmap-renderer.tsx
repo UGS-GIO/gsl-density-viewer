@@ -16,7 +16,7 @@ export interface VariableConfig {
 }
 interface LakeFeatureProperties { 
     layer?: string; // Updated to use 'layer' instead of 'name'
-    [key: string]: any; 
+    [key: string]: string | number | boolean | null | undefined; 
 }
 export type LakeDataProps = FeatureCollection<Geometry, LakeFeatureProperties>;
 
@@ -118,16 +118,11 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
                 .replace(/-+/g, '-');
             const clipId = `maplibreo-lake-clip-${slug || index}`;
             
-            // Debug log to see what layer values we're getting
-            console.log(`🏷️ Feature ${index}: layer="${rawLayer}", slug="${slug}"`);
-            
             // Update arm detection based on actual layer values: GSL4194PolyNA and GSL4194PolySA
             if (rawLayer === 'GSL4194PolyNA' || slug.includes('polyna')) {
                 northArmClipId = clipId;
-                console.log(`🔵 North arm detected: ${rawLayer}`);
             } else if (rawLayer === 'GSL4194PolySA' || slug.includes('polysa')) {
                 southArmClipId = clipId;
-                console.log(`🔴 South arm detected: ${rawLayer}`);
             }
             
             try {
@@ -138,6 +133,7 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
         });
 
         const interpolatorName = currentConfig.interpolate || 'interpolateBlues';
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const colorInterpolator = (d3 as any)[interpolatorName] || d3.interpolateBlues;
         const colorScale = d3.scaleSequential(colorInterpolator).domain([currentRange[0], currentRange[1]]);
 
@@ -156,7 +152,7 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
                         if (NORTH_ARM_STATION_IDS.has(station.id)) northScreenPoints.push(point);
                         else southScreenPoints.push(point);
                     }
-                } catch (e) { /* ignore */ }
+                } catch { /* ignore */ }
             }
         });
 
