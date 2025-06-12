@@ -139,9 +139,9 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
 
         const interpolatorName = currentConfig.interpolate || 'interpolateBlues';
         const colorInterpolator = (d3 as any)[interpolatorName] || d3.interpolateBlues;
-        const colorScale = d3.scaleSequential(colorInterpolator).domain([currentRange[1], currentRange[0]]);
+        const colorScale = d3.scaleSequential(colorInterpolator).domain([currentRange[0], currentRange[1]]);
 
-        const NORTH_ARM_STATION_IDS: ReadonlySet<string> = new Set(['RD2', 'SJ-1', 'RD1', 'LVG4']);
+        const NORTH_ARM_STATION_IDS: ReadonlySet<string> = new Set(['RD2', 'SJ-1', 'LVG4']);
         const northScreenPoints: DataPoint[] = [];
         const southScreenPoints: DataPoint[] = [];
         stations.forEach((station) => {
