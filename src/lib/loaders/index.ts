@@ -63,6 +63,18 @@ export interface GeoJsonResult {
     error: string | null;
 }
 
+// Update LakeFeatureProperties to reflect new structure
+export interface LakeFeatureProperties {
+    layer?: string; // Changed from 'name' to 'layer'
+    [key: string]: any;
+}
+
+// Update LakeFeatureProperties to reflect new structure
+export interface LakeFeatureProperties {
+    layer?: string; // Changed from 'name' to 'layer'
+    [key: string]: any;
+}
+
 // Return type for main data loading function
 export interface SiteDataResult {
     stations: ProcessedStation[];
@@ -85,7 +97,9 @@ interface ApiSiteFeatureProperties {
 // Constants
 const API_ENDPOINT = 'https://postgrest-seamlessgeolmap-734948684426.us-central1.run.app/gsl_brine_sites';
 const API_HEADERS = { 'Accept': 'application/geo+json', 'Accept-Profile': 'emp' };
-const GSL_OUTLINE_ENDPOINT = 'https://ugs-geoserver-prod-flbcoqv7oa-uc.a.run.app/geoserver/gen_gis/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=gen_gis%3Agsl_outline_split&maxFeatures=50&outputFormat=application%2Fjson';
+
+// Updated to use new merged layer endpoint
+const GSL_OUTLINE_ENDPOINT = 'https://ugs-geoserver-prod-flbcoqv7oa-uc.a.run.app/geoserver/gen_gis/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=gen_gis%3Agsl_4194_outline&maxFeatures=50&outputFormat=application%2Fjson';
 
 const UTM_ZONE_12N_PROJ = '+proj=utm +zone=12 +datum=WGS84 +units=m +no_defs';
 const WGS84_PROJ = '+proj=longlat +datum=WGS84 +no_defs';
@@ -105,23 +119,40 @@ const FETCH_TIMEOUT_MS = 5000; // 5 seconds
 // Helper: Load GeoJSON
 export const loadGeoJsonData = async (): Promise<GeoJsonResult> => {
     try {
+        console.log('🌊 Loading lake outline from:', GSL_OUTLINE_ENDPOINT);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
         const response = await fetch(GSL_OUTLINE_ENDPOINT, { signal: controller.signal });
         clearTimeout(timeoutId);
+        
         if (!response.ok) {
             const errorText = await response.text();
             console.error("GeoJSON fetch failed:", response.status, response.statusText, errorText);
             return { data: null, error: `HTTP error loading GeoJSON from URL! status: ${response.status}` };
         }
+        
         const gslGeoJson = await response.json();
+        
+        // Debug logging
+        console.log('📊 GeoJSON Response:', {
+            type: gslGeoJson?.type,
+            featureCount: gslGeoJson?.features?.length || 0,
+            features: gslGeoJson?.features?.map((f: any, i: number) => ({
+                index: i,
+                type: f?.type,
+                geometry: f?.geometry?.type,
+                coordinates: f?.geometry?.coordinates ? 'present' : 'missing',
+                properties: f?.properties
+            })) || []
+        });
+        
         return { data: gslGeoJson, error: null };
     } catch (err) {
         if (err instanceof Error) {
-            console.error('Error loading GeoJSON from URL:', err);
+            console.error('❌ Error loading GeoJSON from URL:', err);
             return { data: null, error: `Failed to load map outline: ${err.message}` };
         } else {
-            console.error('Unknown error loading GeoJSON from URL:', err);
+            console.error('❌ Unknown error loading GeoJSON from URL:', err);
             return { data: null, error: 'Failed to load map outline: Unknown error occurred.' };
         }
     }

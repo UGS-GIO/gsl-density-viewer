@@ -5,12 +5,11 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import HeatmapRenderer, { LakeDataProps, VariableConfig } from '@/components/map/heatmap-renderer';
 import TimeControls from '@/components/ui/time-controls';
 import * as d3 from 'd3';
-import { AllLoadedData, ProcessedStation, SiteDataResult, VariableKey, loadGeoJsonData, loadSiteAndTempData } from '@/lib/loaders/';
+import { AllLoadedData, ProcessedStation, SiteDataResult, VariableKey, loadGeoJsonData, loadSiteAndTempData, LakeFeatureProperties } from '@/lib/loaders/';
 import { createSimpleGeoJSON, calculateAverageDensity } from '@/lib/utils';
 import Legend from '@/components/map/legend';
 
 
-export type LakeFeatureProperties = { name?: string;[key: string]: any; } | null;
 export type StationDataValues = Record<string, number | undefined>;
 type DataRanges = Record<string, [number, number]>;
 interface GeoJsonResult {

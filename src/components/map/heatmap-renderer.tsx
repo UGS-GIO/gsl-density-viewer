@@ -14,7 +14,10 @@ export interface VariableConfig {
     interpolate: string;
     defaultRange: [number, number];
 }
-interface LakeFeatureProperties { name?: string;[key: string]: any; }
+interface LakeFeatureProperties { 
+    layer?: string; // Updated to use 'layer' instead of 'name'
+    [key: string]: any; 
+}
 export type LakeDataProps = FeatureCollection<Geometry, LakeFeatureProperties>;
 
 const HEATMAP_RESOLUTION_WIDTH = 600;
@@ -104,20 +107,34 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
         let northArmClipId: string | null = null;
         let southArmClipId: string | null = null;
 
+        // Updated to use 'layer' property instead of 'name'
         lakeData.features.forEach((feature, index) => {
-            const rawName = feature.properties?.name || `feature-${index}`;
-            const slug = rawName
+            const rawLayer = feature.properties?.layer || `feature-${index}`;
+            const slug = rawLayer
                 .toLowerCase()
                 .replace(/\s+/g, '-')
                 .replace(/[^a-z0-9-]/g, '')
                 .replace(/^-+|-+$/g, '')
                 .replace(/-+/g, '-');
             const clipId = `maplibreo-lake-clip-${slug || index}`;
-            if (slug.includes('north')) northArmClipId = clipId;
-            else if (slug.includes('south')) southArmClipId = clipId;
+            
+            // Debug log to see what layer values we're getting
+            console.log(`🏷️ Feature ${index}: layer="${rawLayer}", slug="${slug}"`);
+            
+            // Update arm detection based on actual layer values: GSL4194PolyNA and GSL4194PolySA
+            if (rawLayer === 'GSL4194PolyNA' || slug.includes('polyna')) {
+                northArmClipId = clipId;
+                console.log(`🔵 North arm detected: ${rawLayer}`);
+            } else if (rawLayer === 'GSL4194PolySA' || slug.includes('polysa')) {
+                southArmClipId = clipId;
+                console.log(`🔴 South arm detected: ${rawLayer}`);
+            }
+            
             try {
                 defs.append('clipPath').attr('id', clipId).append('path').datum(feature).attr('d', geoPathGenerator);
-            } catch (error) { console.error("Error creating D3 clip path for " + slug + ":", error); }
+            } catch (error) { 
+                console.error("Error creating D3 clip path for " + slug + ":", error); 
+            }
         });
 
         const interpolatorName = currentConfig.interpolate || 'interpolateBlues';
@@ -173,8 +190,8 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
             let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
             const currentArmSlug = clipIdToSlug(armClipId);
             const armFeature = lakeData.features.find(f => {
-                const rawName = f.properties?.name || '';
-                const slug = rawName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/^-+|-+$/g, '').replace(/-+/g, '-');
+                const rawLayer = f.properties?.layer || '';
+                const slug = rawLayer.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/^-+|-+$/g, '').replace(/-+/g, '-');
                 return slug === currentArmSlug;
             });
 
