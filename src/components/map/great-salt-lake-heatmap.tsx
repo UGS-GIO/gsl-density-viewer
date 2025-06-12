@@ -212,42 +212,42 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         }
     };
 
-    const agrcTileUrl = "https://discover.agrc.utah.gov/login/path/bottle-apple-crater-oberon/tiles/lite_basemap/{z}/{x}/{y}";
+    const agrcTileUrl = "https://discover.agrc.utah.gov/login/path/nebula-east-focus-virgo/tiles/lite_basemap/{z}/{x}/{y}";
 
     // Initialize MapLibre Map
     useEffect(() => {
         if (mapRef.current || !mapContainerRef.current) return; // Initialize map only once
-
+        
         const GSL_CENTER: [number, number] = [-112.6, 41.2]; // Lon, Lat for GSL
         const INITIAL_ZOOM = 8;
-
+        
         mapRef.current = new maplibregl.Map({
             container: mapContainerRef.current,
-            // style: {
-            //     version: 8,
-            //     sources: {
-            //         'agrc-raster-tiles': {
-            //             'type': 'raster',
-            //             'tiles': [agrcTileUrl],
-            //             'tileSize': 256,
-            //             'attribution': '<a href="https://gis.utah.gov/" target="_blank">UGRC</a>'
-            //         }
-            //     },
-            //     layers: [
-            //         {
-            //             'id': 'agrc-basemap-layer',
-            //             'type': 'raster',
-            //             'source': 'agrc-raster-tiles',
-            //             'minzoom': 0,
-            //             'maxzoom': 22
-            //         }
-            //     ]
-            // }, 
+            style: {
+                version: 8,
+                sources: {
+                    'agrc-raster-tiles': {
+                        'type': 'raster',
+                        'tiles': [agrcTileUrl],
+                        'tileSize': 256,
+                        'attribution': '<a href="https://gis.utah.gov/" target="_blank">UGRC</a>'
+                    }
+                },
+                layers: [
+                    {
+                        'id': 'agrc-basemap-layer',
+                        'type': 'raster',
+                        'source': 'agrc-raster-tiles',
+                        'minzoom': 0,
+                        'maxzoom': 22
+                    }
+                ]
+            },
             // add openfreemap style for testing until AGRC is ready
-            style: 'https://tiles.openfreemap.org/styles/liberty',
+            // style: 'https://tiles.openfreemap.org/styles/liberty',
             center: GSL_CENTER,
             zoom: INITIAL_ZOOM,
-        });
+    });
 
         mapRef.current.on('load', () => {
             setMapLoaded(true);
