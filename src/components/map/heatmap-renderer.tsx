@@ -15,7 +15,7 @@ export interface VariableConfig {
     defaultRange: [number, number];
 }
 interface LakeFeatureProperties { 
-    layer?: string; // Updated to use 'layer' instead of 'name'
+    layer?: string;
     [key: string]: string | number | boolean | null | undefined; 
 }
 export type LakeDataProps = FeatureCollection<Geometry, LakeFeatureProperties>;
@@ -43,8 +43,6 @@ interface DataPoint {
 
 /**
  * Renders a heatmap overlay on a MapLibre map using D3.js.
- * This component takes care of rendering the heatmap based on the provided lake data,
- * station data, and current configuration.
  */
 const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
     map,
@@ -87,12 +85,12 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
     }, []);
 
     const renderOverlay = useCallback(() => {
-        if (!contentGroupRef.current || !imageLayerGroupRef.current || !lakeData || !lakeData.features || !currentConfig || !stations || !map.isStyleLoaded()) {
-            if (contentGroupRef.current) contentGroupRef.current.selectAll('*').remove();
-            if (imageLayerGroupRef.current) imageLayerGroupRef.current.selectAll('*').remove();
+        if (!contentGroupRef.current || !imageLayerGroupRef.current || !lakeData || !lakeData.features || !currentConfig || !stations) {
             return;
         }
 
+        // Don't check map.isStyleLoaded() here - it can cause issues during pan/zoom
+        
         const gContent = contentGroupRef.current;
         const gImages = imageLayerGroupRef.current;
 
@@ -295,25 +293,30 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
     }, [map, lakeData, stations, currentDataForTimepoint, currentRange, currentConfig, geoPathGenerator, currentTimePoint, formatDateForTitle, clipIdToSlug]);
 
     useEffect(() => {
-        if (!map || !map.getCanvasContainer() || svgLayerRef.current) return;
+        if (!map || !map.getCanvasContainer() || svgLayerRef.current) return; // Initialize only once
 
         const newSvgLayer = d3.select(map.getCanvasContainer())
             .append('svg')
-            .attr('class', 'd3-overlay absolute top-0 left-0 w-full h-full pointer-events-none z-[5]')
+            .style('position', 'absolute')
+            .style('top', '0')
+            .style('left', '0')
+            .style('width', '100%')
+            .style('height', '100%')
+            .style('pointer-events', 'none')
+            .style('z-index', '1'); // Lower z-index to stay below UI controls
+            
         svgLayerRef.current = newSvgLayer;
         imageLayerGroupRef.current = newSvgLayer.append('g').attr('class', 'd3-heatmap-image-layer');
         contentGroupRef.current = newSvgLayer.append('g').attr('class', 'd3-heatmap-content-layer');
 
+        // Direct render on every map event - no debouncing
         const mapMoveHandler = () => renderOverlay();
         map.on('move', mapMoveHandler);
         map.on('zoom', mapMoveHandler);
         map.on('resize', mapMoveHandler);
 
-        if (map.isStyleLoaded()) {
-            renderOverlay();
-        } else {
-            map.once('styledata', renderOverlay);
-        }
+        // Initial render
+        renderOverlay();
 
         return () => {
             map.off('move', mapMoveHandler);
@@ -327,7 +330,7 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
     }, [map, renderOverlay]);
 
     useEffect(() => {
-        if (map && map.isStyleLoaded() && svgLayerRef.current) {
+        if (svgLayerRef.current) {
             renderOverlay();
         }
     }, [lakeData, stations, currentDataForTimepoint, currentRange, currentConfig, currentTimePoint, renderOverlay]);
