@@ -454,6 +454,30 @@ export const loadSiteAndTempData = async (): Promise<SiteDataResult> => {
             })
             .sort();
 
+        // Filter time points to only include months with actual data
+        const NORTH_ARM_STATION_IDS = new Set(['RD2', 'SJ-1', 'LVG4']);
+        
+        const timePointsWithData = allTimePoints.filter(timePoint => {
+            // Check if this timepoint has any density or salinity data
+            const hasDensityData = densityLookup[timePoint] && Object.keys(densityLookup[timePoint] as StationDataValues).length > 0;
+            const hasSalinityData = salinityLookup[timePoint] && Object.keys(salinityLookup[timePoint] as StationDataValues).length > 0;
+            
+            if (!hasDensityData && !hasSalinityData) {
+                return false; // Skip if no data at all
+            }
+            
+            // Check if both arms are empty
+            const densityStations = densityLookup[timePoint] ? Object.keys(densityLookup[timePoint] as StationDataValues) : [];
+            const salinityStations = salinityLookup[timePoint] ? Object.keys(salinityLookup[timePoint] as StationDataValues) : [];
+            const allStations = new Set([...densityStations, ...salinityStations]);
+            
+            const hasNorthArmData = Array.from(allStations).some(stationId => NORTH_ARM_STATION_IDS.has(stationId));
+            const hasSouthArmData = Array.from(allStations).some(stationId => !NORTH_ARM_STATION_IDS.has(stationId));
+            
+            // Only include timepoints that have data in at least one arm
+            return hasNorthArmData || hasSouthArmData;
+        });
+
 
         // Calculate ranges ONLY from real data
         const calculateRange = (dataLookup: TimePointStationData): [number, number] => {
@@ -500,7 +524,7 @@ export const loadSiteAndTempData = async (): Promise<SiteDataResult> => {
         // Build final result - NO MOCK DATA EVER
         const result: SiteDataResult = {
             stations: processedStations,
-            timePoints: allTimePoints,
+            timePoints: timePointsWithData,
             allData: {
                 density: densityLookup,
                 salinity: salinityLookup,
