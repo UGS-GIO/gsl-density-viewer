@@ -10,7 +10,6 @@ import { createSimpleGeoJSON, calculateAverageDensity } from '@/lib/utils';
 import Legend from '@/components/map/legend';
 
 
-export type LakeFeatureProperties = { name?: string;[key: string]: any; } | null;
 export type StationDataValues = Record<string, number | undefined>;
 type DataRanges = Record<string, [number, number]>;
 interface GeoJsonResult {
@@ -48,14 +47,6 @@ const GreatSaltLakeHeatmap: React.FC = () => {
             precision: 1,
             interpolate: 'interpolateGreens',
             defaultRange: [50, 250]
-        },
-        temperature: {
-            key: 'temperature',
-            label: 'Avg Temp',
-            unit: '°F',
-            precision: 1,
-            interpolate: 'interpolateOrRd',
-            defaultRange: [0, 100]
         }
     }), []);
 
@@ -99,13 +90,34 @@ const GreatSaltLakeHeatmap: React.FC = () => {
 
     const availableVariables: VariableKey[] = useMemo(() => {
         const heatmapVars = Object.keys(allData)
-            .filter((key): key is VariableKey => key in VARIABLE_CONFIGS && (key === 'density' || key === 'salinity'));
-        return heatmapVars.length > 0 ? heatmapVars : ['density'];
+            .filter((key): key is VariableKey => {
+                if (!(key in VARIABLE_CONFIGS)) return false;
+                
+                // Only include variables that have actual data
+                const dataSet = allData[key as VariableKey];
+                if (key === 'temperature') {
+                    return !!dataSet && Object.keys(dataSet).length > 0;
+                } else {
+                    // For density/salinity, check if any timepoint has data
+                    return !!dataSet && Object.values(dataSet).some(monthData => 
+                        monthData && Object.keys(monthData).length > 0
+                    );
+                }
+            });
+        
+        return heatmapVars.length > 0 ? heatmapVars : [];
     }, [allData, VARIABLE_CONFIGS]);
 
+
+
     useEffect(() => {
-        if (availableVariables.length > 0 && !availableVariables.includes(selectedVariable))
+        if (availableVariables.length === 0) {
+            return;
+        }
+        
+        if (!availableVariables.includes(selectedVariable)) {
             setSelectedVariable(availableVariables[0]);
+        }
     }, [availableVariables, selectedVariable]);
 
 
@@ -135,10 +147,16 @@ const GreatSaltLakeHeatmap: React.FC = () => {
     const currentTimePoint: string = useMemo(() => timePoints[currentTimeIndex] || '', [timePoints, currentTimeIndex]);
 
     // currentDataForTimepoint is specifically for the HeatmapRenderer (station-based data)
-    const currentDataForTimepoint: StationDataValues | {} = useMemo(() => {
+    const currentDataForTimepoint: StationDataValues = useMemo(() => {
         if (selectedVariable === 'density' || selectedVariable === 'salinity') {
             const dataSet = allData[selectedVariable];
-            if (dataSet) return dataSet[currentTimePoint] || {};
+            if (dataSet && dataSet[currentTimePoint]) {
+                const monthData = dataSet[currentTimePoint];
+
+                return monthData || {};
+            } else {
+                return {} as StationDataValues;
+            }
         }
         return {};
     }, [allData, selectedVariable, currentTimePoint]);
@@ -167,8 +185,10 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         }
         return undefined;
     }, [currentDataForTimepoint, currentConfig]);
+    
     const legendColorScale: d3.ScaleSequential<number, string> | null = useMemo(() => {
         if (!currentConfig?.interpolate || !currentRange) return null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const colorInterpolator = (d3 as any)[currentConfig.interpolate] || d3.interpolateBlues;
         return d3.scaleSequential(colorInterpolator).domain([currentRange[1], currentRange[0]]);
     }, [currentConfig, currentRange]);
@@ -192,42 +212,42 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         }
     };
 
-    const agrcTileUrl = "https://discover.agrc.utah.gov/login/path/bottle-apple-crater-oberon/tiles/lite_basemap/{z}/{x}/{y}";
+    const agrcTileUrl = "https://discover.agrc.utah.gov/login/path/nebula-east-focus-virgo/tiles/lite_basemap/{z}/{x}/{y}";
 
     // Initialize MapLibre Map
     useEffect(() => {
         if (mapRef.current || !mapContainerRef.current) return; // Initialize map only once
-
+        
         const GSL_CENTER: [number, number] = [-112.6, 41.2]; // Lon, Lat for GSL
-        const INITIAL_ZOOM = 8;
-
+        const INITIAL_ZOOM = 9;
+        
         mapRef.current = new maplibregl.Map({
             container: mapContainerRef.current,
-            // style: {
-            //     version: 8,
-            //     sources: {
-            //         'agrc-raster-tiles': {
-            //             'type': 'raster',
-            //             'tiles': [agrcTileUrl],
-            //             'tileSize': 256,
-            //             'attribution': '<a href="https://gis.utah.gov/" target="_blank">UGRC</a>'
-            //         }
-            //     },
-            //     layers: [
-            //         {
-            //             'id': 'agrc-basemap-layer',
-            //             'type': 'raster',
-            //             'source': 'agrc-raster-tiles',
-            //             'minzoom': 0,
-            //             'maxzoom': 22
-            //         }
-            //     ]
-            // }, 
+            style: {
+                version: 8,
+                sources: {
+                    'agrc-raster-tiles': {
+                        'type': 'raster',
+                        'tiles': [agrcTileUrl],
+                        'tileSize': 256,
+                        'attribution': '<a href="https://gis.utah.gov/" target="_blank">UGRC</a>'
+                    }
+                },
+                layers: [
+                    {
+                        'id': 'agrc-basemap-layer',
+                        'type': 'raster',
+                        'source': 'agrc-raster-tiles',
+                        'minzoom': 0,
+                        'maxzoom': 22
+                    }
+                ]
+            },
             // add openfreemap style for testing until AGRC is ready
-            style: 'https://tiles.openfreemap.org/styles/liberty',
+            // style: 'https://tiles.openfreemap.org/styles/liberty',
             center: GSL_CENTER,
             zoom: INITIAL_ZOOM,
-        });
+    });
 
         mapRef.current.on('load', () => {
             setMapLoaded(true);
@@ -299,6 +319,17 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                                 ` | Avg ${currentConfig.label}: ${avgValueForDisplay.toFixed(currentConfig.precision)} ${currentConfig.unit}`
                             )}
                         </p>
+                        {/* Add data availability indicator */}
+                        {Object.keys(currentDataForTimepoint).length === 0 && currentConfig.key !== 'temperature' && (
+                            <p className="text-xs text-yellow-600 font-medium">
+                                No {currentConfig.label.toLowerCase()} data available for this time period
+                            </p>
+                        )}
+                        {Object.keys(currentDataForTimepoint).length > 0 && currentConfig.key !== 'temperature' && (
+                            <p className="text-xs text-green-600 font-medium">
+                                Real data from {Object.keys(currentDataForTimepoint).length} stations
+                            </p>
+                        )}
                     </header>
                     {legendColorScale && currentRange && (
                         <div className="flex justify-center h-14 md:h-16 px-2 py-1">

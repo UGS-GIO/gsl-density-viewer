@@ -14,7 +14,10 @@ export interface VariableConfig {
     interpolate: string;
     defaultRange: [number, number];
 }
-interface LakeFeatureProperties { name?: string;[key: string]: any; }
+interface LakeFeatureProperties { 
+    layer?: string;
+    [key: string]: string | number | boolean | null | undefined; 
+}
 export type LakeDataProps = FeatureCollection<Geometry, LakeFeatureProperties>;
 
 const HEATMAP_RESOLUTION_WIDTH = 600;
@@ -40,8 +43,6 @@ interface DataPoint {
 
 /**
  * Renders a heatmap overlay on a MapLibre map using D3.js.
- * This component takes care of rendering the heatmap based on the provided lake data,
- * station data, and current configuration.
  */
 const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
     map,
@@ -84,12 +85,12 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
     }, []);
 
     const renderOverlay = useCallback(() => {
-        if (!contentGroupRef.current || !imageLayerGroupRef.current || !lakeData || !lakeData.features || !currentConfig || !stations || !map.isStyleLoaded()) {
-            if (contentGroupRef.current) contentGroupRef.current.selectAll('*').remove();
-            if (imageLayerGroupRef.current) imageLayerGroupRef.current.selectAll('*').remove();
+        if (!contentGroupRef.current || !imageLayerGroupRef.current || !lakeData || !lakeData.features || !currentConfig || !stations) {
             return;
         }
 
+        // Don't check map.isStyleLoaded() here - it can cause issues during pan/zoom
+        
         const gContent = contentGroupRef.current;
         const gImages = imageLayerGroupRef.current;
 
@@ -104,27 +105,37 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
         let northArmClipId: string | null = null;
         let southArmClipId: string | null = null;
 
+        // Updated to use 'layer' property instead of 'name'
         lakeData.features.forEach((feature, index) => {
-            const rawName = feature.properties?.name || `feature-${index}`;
-            const slug = rawName
+            const rawLayer = feature.properties?.layer || `feature-${index}`;
+            const slug = rawLayer
                 .toLowerCase()
                 .replace(/\s+/g, '-')
                 .replace(/[^a-z0-9-]/g, '')
                 .replace(/^-+|-+$/g, '')
                 .replace(/-+/g, '-');
             const clipId = `maplibreo-lake-clip-${slug || index}`;
-            if (slug.includes('north')) northArmClipId = clipId;
-            else if (slug.includes('south')) southArmClipId = clipId;
+            
+            // Update arm detection based on actual layer values: GSL4194PolyNA and GSL4194PolySA
+            if (rawLayer === 'GSL4194PolyNA' || slug.includes('polyna')) {
+                northArmClipId = clipId;
+            } else if (rawLayer === 'GSL4194PolySA' || slug.includes('polysa')) {
+                southArmClipId = clipId;
+            }
+            
             try {
                 defs.append('clipPath').attr('id', clipId).append('path').datum(feature).attr('d', geoPathGenerator);
-            } catch (error) { console.error("Error creating D3 clip path for " + slug + ":", error); }
+            } catch (error) { 
+                console.error("Error creating D3 clip path for " + slug + ":", error); 
+            }
         });
 
         const interpolatorName = currentConfig.interpolate || 'interpolateBlues';
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const colorInterpolator = (d3 as any)[interpolatorName] || d3.interpolateBlues;
-        const colorScale = d3.scaleSequential(colorInterpolator).domain([currentRange[1], currentRange[0]]);
+        const colorScale = d3.scaleSequential(colorInterpolator).domain([currentRange[0], currentRange[1]]);
 
-        const NORTH_ARM_STATION_IDS: ReadonlySet<string> = new Set(['RD2', 'SJ-1', 'RD1', 'LVG4']);
+        const NORTH_ARM_STATION_IDS: ReadonlySet<string> = new Set(['RD2', 'SJ-1', 'LVG4']);
         const northScreenPoints: DataPoint[] = [];
         const southScreenPoints: DataPoint[] = [];
         stations.forEach((station) => {
@@ -139,7 +150,7 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
                         if (NORTH_ARM_STATION_IDS.has(station.id)) northScreenPoints.push(point);
                         else southScreenPoints.push(point);
                     }
-                } catch (e) { /* ignore */ }
+                } catch { /* ignore */ }
             }
         });
 
@@ -173,8 +184,8 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
             let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
             const currentArmSlug = clipIdToSlug(armClipId);
             const armFeature = lakeData.features.find(f => {
-                const rawName = f.properties?.name || '';
-                const slug = rawName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/^-+|-+$/g, '').replace(/-+/g, '-');
+                const rawLayer = f.properties?.layer || '';
+                const slug = rawLayer.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/^-+|-+$/g, '').replace(/-+/g, '-');
                 return slug === currentArmSlug;
             });
 
@@ -282,25 +293,30 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
     }, [map, lakeData, stations, currentDataForTimepoint, currentRange, currentConfig, geoPathGenerator, currentTimePoint, formatDateForTitle, clipIdToSlug]);
 
     useEffect(() => {
-        if (!map || !map.getCanvasContainer() || svgLayerRef.current) return;
+        if (!map || !map.getCanvasContainer() || svgLayerRef.current) return; // Initialize only once
 
         const newSvgLayer = d3.select(map.getCanvasContainer())
             .append('svg')
-            .attr('class', 'd3-overlay absolute top-0 left-0 w-full h-full pointer-events-none z-[5]')
+            .style('position', 'absolute')
+            .style('top', '0')
+            .style('left', '0')
+            .style('width', '100%')
+            .style('height', '100%')
+            .style('pointer-events', 'none')
+            .style('z-index', '1'); // Lower z-index to stay below UI controls
+            
         svgLayerRef.current = newSvgLayer;
         imageLayerGroupRef.current = newSvgLayer.append('g').attr('class', 'd3-heatmap-image-layer');
         contentGroupRef.current = newSvgLayer.append('g').attr('class', 'd3-heatmap-content-layer');
 
+        // Direct render on every map event - no debouncing
         const mapMoveHandler = () => renderOverlay();
         map.on('move', mapMoveHandler);
         map.on('zoom', mapMoveHandler);
         map.on('resize', mapMoveHandler);
 
-        if (map.isStyleLoaded()) {
-            renderOverlay();
-        } else {
-            map.once('styledata', renderOverlay);
-        }
+        // Initial render
+        renderOverlay();
 
         return () => {
             map.off('move', mapMoveHandler);
@@ -314,7 +330,7 @@ const HeatmapRenderer: React.FC<HeatmapRendererProps> = ({
     }, [map, renderOverlay]);
 
     useEffect(() => {
-        if (map && map.isStyleLoaded() && svgLayerRef.current) {
+        if (svgLayerRef.current) {
             renderOverlay();
         }
     }, [lakeData, stations, currentDataForTimepoint, currentRange, currentConfig, currentTimePoint, renderOverlay]);
