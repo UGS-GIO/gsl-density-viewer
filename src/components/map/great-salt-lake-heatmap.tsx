@@ -254,7 +254,9 @@ const GreatSaltLakeHeatmap: React.FC = () => {
             console.log("MapLibre map loaded and ready.");
         });
 
-        mapRef.current.addControl(new maplibregl.NavigationControl(), 'top-right');
+        //mapRef.current.addControl(new maplibregl.NavigationControl(), 'top-right');
+        mapRef.current.scrollZoom.disable();
+        mapRef.current.doubleClickZoom.disable();
 
         return () => {
             mapRef.current?.remove();
