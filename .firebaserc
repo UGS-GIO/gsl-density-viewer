@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "ut-dnr-ugs-gslhub"
-  }
+  },
+  "targets": {
+    "ut-dnr-ugs-gslhub": {
+      "hosting": {
+        "brine": [
+          "gsl-brine"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }
