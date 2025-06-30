@@ -42,7 +42,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         },
         salinity: {
             key: 'salinity',
-            label: 'Salinity (EOS)',
+            label: 'Salinity (TDS)',
             unit: 'g/L',
             precision: 1,
             interpolate: 'interpolateGreens',
@@ -67,7 +67,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         if (isGeoJsonLoading) {
             return createSimpleGeoJSON();
         }
-        
+
         if (geoJsonQueryError || geoJsonQueryResult?.error || !geoJsonQueryResult?.data) {
             if (geoJsonQueryError) console.error("GeoJSON query error:", geoJsonQueryError.message);
             if (geoJsonQueryResult?.error) console.error("GeoJSON app error:", geoJsonQueryResult.error);
@@ -92,21 +92,38 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         const heatmapVars = Object.keys(allData)
             .filter((key): key is VariableKey => {
                 if (!(key in VARIABLE_CONFIGS)) return false;
-                
+
                 // Only include variables that have actual data
                 const dataSet = allData[key as VariableKey];
                 if (key === 'temperature') {
                     return !!dataSet && Object.keys(dataSet).length > 0;
                 } else {
                     // For density/salinity, check if any timepoint has data
-                    return !!dataSet && Object.values(dataSet).some(monthData => 
+                    return !!dataSet && Object.values(dataSet).some(monthData =>
                         monthData && Object.keys(monthData).length > 0
                     );
                 }
             });
-        
+
         return heatmapVars.length > 0 ? heatmapVars : [];
     }, [allData, VARIABLE_CONFIGS]);
+
+    // Filter timePoints to only include those with data for the selected variable.
+    const filteredTimePoints = useMemo(() => {
+        if (!selectedVariable || !allData[selectedVariable] || timePoints.length === 0) {
+            return [];
+        }
+        const dataForVar = allData[selectedVariable];
+        // The filter logic differs for temperature vs. other variables.
+        return timePoints.filter(tp => {
+            const dataForTimePoint = dataForVar?.[tp];
+            if (selectedVariable === 'temperature') {
+                return typeof dataForTimePoint === 'number' && isFinite(dataForTimePoint);
+            }
+            // For other variables, check if there's a non-empty object of station data.
+            return dataForTimePoint && Object.keys(dataForTimePoint).length > 0;
+        });
+    }, [allData, selectedVariable, timePoints]);
 
 
 
@@ -114,24 +131,29 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         if (availableVariables.length === 0) {
             return;
         }
-        
+
         if (!availableVariables.includes(selectedVariable)) {
             setSelectedVariable(availableVariables[0]);
         }
     }, [availableVariables, selectedVariable]);
 
+    // Effect to set the time slider to the most recent date on load and when the variable changes.
+    useEffect(() => {
+        if (filteredTimePoints.length > 0) {
+            // Set the index to the last item in the array (most recent time).
+            setCurrentTimeIndex(filteredTimePoints.length - 1);
+        }
+        // This effect should re-run whenever the selected variable changes, causing the
+        // filteredTimePoints array to be recalculated.
+    }, [filteredTimePoints, selectedVariable]);
+
 
     // Animation timer effect
     useEffect(() => {
-        if (playing && timePoints.length > 0) {
+        if (playing && filteredTimePoints.length > 0) {
             playTimerRef.current = window.setInterval(() => {
-                setCurrentTimeIndex((prevIndex) => {
-                    const nextIndex = prevIndex + 1;
-                    if (nextIndex >= timePoints.length) {
-                        return 0; // Loop back to the beginning
-                    }
-                    return nextIndex;
-                });
+                // Use modulo operator to loop back to the beginning cleanly.
+                setCurrentTimeIndex((prevIndex) => (prevIndex + 1) % filteredTimePoints.length);
             }, ANIMATION_INTERVAL);
         } else if (playTimerRef.current !== null) {
             clearInterval(playTimerRef.current);
@@ -140,11 +162,11 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         return () => {
             if (playTimerRef.current !== null) clearInterval(playTimerRef.current);
         };
-    }, [playing, timePoints.length, ANIMATION_INTERVAL]);
+    }, [playing, filteredTimePoints.length]);
 
 
     // Calculate the current time point based on the current index
-    const currentTimePoint: string = useMemo(() => timePoints[currentTimeIndex] || '', [timePoints, currentTimeIndex]);
+    const currentTimePoint: string = useMemo(() => filteredTimePoints[currentTimeIndex] || '', [filteredTimePoints, currentTimeIndex]);
 
     // currentDataForTimepoint is specifically for the HeatmapRenderer (station-based data)
     const currentDataForTimepoint: StationDataValues = useMemo(() => {
@@ -178,14 +200,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
         const tempTimePointData = allData.temperature?.[currentTimePoint];
         return typeof tempTimePointData === 'number' ? tempTimePointData : undefined;
     }, [allData, currentTimePoint]);
-    const avgValueForDisplay: number | undefined = useMemo(() => {
-        if (currentConfig.key !== 'temperature' && currentDataForTimepoint && Object.keys(currentDataForTimepoint).length > 0) {
-            const avg = calculateAverageDensity(currentDataForTimepoint as StationDataValues);
-            return avg === null || isNaN(avg) ? undefined : avg;
-        }
-        return undefined;
-    }, [currentDataForTimepoint, currentConfig]);
-    
+
     const legendColorScale: d3.ScaleSequential<number, string> | null = useMemo(() => {
         if (!currentConfig?.interpolate || !currentRange) return null;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -217,10 +232,10 @@ const GreatSaltLakeHeatmap: React.FC = () => {
     // Initialize MapLibre Map
     useEffect(() => {
         if (mapRef.current || !mapContainerRef.current) return; // Initialize map only once
-        
+
         const GSL_CENTER: [number, number] = [-112.6, 41.2]; // Lon, Lat for GSL
         const INITIAL_ZOOM = 9;
-        
+
         mapRef.current = new maplibregl.Map({
             container: mapContainerRef.current,
             style: {
@@ -247,7 +262,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
             // style: 'https://tiles.openfreemap.org/styles/liberty',
             center: GSL_CENTER,
             zoom: INITIAL_ZOOM,
-    });
+        });
 
         mapRef.current.on('load', () => {
             setMapLoaded(true);
@@ -317,9 +332,6 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                         </h2>
                         <p className="text-xs text-muted-foreground sm:text-sm truncate">
                             Avg Temp: {currentTemperature !== undefined ? `${currentTemperature.toFixed(1)}°F` : 'N/A'}
-                            {currentConfig.key !== 'temperature' && avgValueForDisplay !== undefined && !isNaN(avgValueForDisplay) && (
-                                ` | Avg ${currentConfig.label}: ${avgValueForDisplay.toFixed(currentConfig.precision)} ${currentConfig.unit}`
-                            )}
                         </p>
                         {/* Add data availability indicator */}
                         {Object.keys(currentDataForTimepoint).length === 0 && currentConfig.key !== 'temperature' && (
@@ -345,7 +357,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                 </div>
 
                 {/* Time Controls */}
-                {!isSiteDataLoading && timePoints.length > 0 && (
+                {!isSiteDataLoading && filteredTimePoints.length > 0 && (
                     <TimeControls
                         variables={availableVariables}
                         selectedVar={selectedVariable}
@@ -355,12 +367,12 @@ const GreatSaltLakeHeatmap: React.FC = () => {
                         setPlaying={setPlaying}
                         currentTimeIndex={currentTimeIndex}
                         setCurrentTimeIndex={setCurrentTimeIndex}
-                        timePoints={timePoints}
+                        timePoints={filteredTimePoints}
                         currentTimePoint={currentTimePoint}
                         isLoading={isSiteDataLoading}
                     />
                 )}
-                {!isSiteDataLoading && timePoints.length === 0 && (
+                {!isSiteDataLoading && filteredTimePoints.length === 0 && (
                     <p className="text-sm text-muted-foreground p-2 text-center">Time data unavailable.</p>
                 )}
             </div>
