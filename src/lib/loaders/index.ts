@@ -9,6 +9,7 @@ import { FeatureCollection, Geometry } from 'geojson';
 // Structure of individual reading from the API
 interface ApiReading {
     date: string;
+    depth?: number | null; // Add depth field
     temperature?: number | null;
     // Density related fields (add others if known)
     'LABminusDENg/cm3'?: string | number | null;
@@ -374,14 +375,52 @@ export const loadSiteAndTempData = async (): Promise<SiteDataResult> => {
                         return;
                     }
 
-
+                    // Group readings by date to handle multiple depths
+                    const readingsByDate = new Map<string, ApiReading[]>();
+                    
                     feature.properties.readings.forEach(reading => {
                         if (!reading.date || !isDateOnOrAfterMinDate(reading.date)) {
                             return;
                         }
+                        
+                        const dateKey = reading.date;
+                        if (!readingsByDate.has(dateKey)) {
+                            readingsByDate.set(dateKey, []);
+                        }
+                        readingsByDate.get(dateKey)?.push(reading);
+                    });
+
+                    // Process only the shallowest reading for each date
+                    readingsByDate.forEach((readings, dateStr) => {
+                        // Find the reading with the minimum depth
+                        let shallowestReading = readings[0];
+                        
+                        if (readings.length > 1) {
+                            shallowestReading = readings.reduce((shallow, current) => {
+                                const shallowDepth = shallow.depth !== undefined && shallow.depth !== null 
+                                    ? parseFloat(String(shallow.depth)) 
+                                    : Infinity;
+                                const currentDepth = current.depth !== undefined && current.depth !== null 
+                                    ? parseFloat(String(current.depth)) 
+                                    : Infinity;
+                                
+                                return currentDepth < shallowDepth ? current : shallow;
+                            });
+                            
+                            // Log when we select from multiple depths (for debugging)
+                            const selectedDepth = shallowestReading.depth !== undefined && shallowestReading.depth !== null 
+                                ? shallowestReading.depth 
+                                : 'unknown';
+                            const allDepths = readings
+                                .map(r => r.depth)
+                                .filter(d => d !== undefined && d !== null)
+                                .sort((a, b) => Number(a) - Number(b));
+                            
+                            console.log(`Station ${station.id} on ${dateStr}: Selected depth ${selectedDepth} from available depths:`, allDepths);
+                        }
 
                         try {
-                            const dateObj = new Date(reading.date);
+                            const dateObj = new Date(dateStr);
                             if (isNaN(dateObj.getTime())) return;
 
                             const year = dateObj.getFullYear();
@@ -391,7 +430,7 @@ export const loadSiteAndTempData = async (): Promise<SiteDataResult> => {
                             timePointsSet.add(yearMonth);
 
                             // Process Density Data - ONLY if it exists
-                            const densityValue = extractDensityValue(reading);
+                            const densityValue = extractDensityValue(shallowestReading);
                             if (densityValue !== null) {
                                 if (!densityLookup[yearMonth]) {
                                     densityLookup[yearMonth] = {};
@@ -400,7 +439,7 @@ export const loadSiteAndTempData = async (): Promise<SiteDataResult> => {
                             }
 
                             // Process Salinity Data - ONLY if it exists
-                            const salinityValue = extractSalinityValue(reading);
+                            const salinityValue = extractSalinityValue(shallowestReading);
                             if (salinityValue !== null) {
                                 if (!salinityLookup[yearMonth]) {
                                     salinityLookup[yearMonth] = {};
