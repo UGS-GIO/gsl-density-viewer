@@ -29,7 +29,7 @@ const GreatSaltLakeHeatmap: React.FC = () => {
     const [selectedVariable, setSelectedVariable] = useState<VariableKey>('density');
     const [playing, setPlaying] = useState<boolean>(false);
     const playTimerRef = useRef<number | null>(null);
-    const ANIMATION_INTERVAL = 500;
+    const ANIMATION_INTERVAL = 750;
 
     const VARIABLE_CONFIGS = useMemo((): Record<string, VariableConfig> => ({
         density: {
