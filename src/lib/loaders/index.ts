@@ -93,7 +93,7 @@ interface ApiSiteFeatureProperties {
 }
 
 // Constants
-const API_ENDPOINT = 'https://postgrest-seamlessgeolmap-734948684426.us-central1.run.app/gsl_brine_sites';
+const API_ENDPOINT = 'https://postgrest-seamlessgeolmap-734948684426.us-central1.run.app/gsl_brine_sites_test';
 const API_HEADERS = { 'Accept': 'application/geo+json', 'Accept-Profile': 'emp' };
 
 // Updated to use new merged layer endpoint
